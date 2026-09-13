@@ -255,7 +255,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       '🎮 Grid Words result:\n'
       '${state.player1Initials}: ${state.score1}  vs  ${state.player2Initials}: ${state.score2}\n'
       '${_winnerLabel()}\n\n'
-      'Play Grid Words yourself: ${AppLinks.playStoreUrl}',
+      'Play Grid Words yourself: ${AppLinks.downloadUrl}',
     );
   }
 

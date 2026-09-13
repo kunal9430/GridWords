@@ -24,7 +24,7 @@ class AboutScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Text('Version 1.0.0', style: TextStyle(fontSize: 14, color: Colors.grey)),
                 const SizedBox(height: 4),
-                const Text('Developer: Kunal Kumar', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                const Text('Developer: Kunal Kumar 😎', style: TextStyle(fontSize: 14, color: Colors.grey)),
                 const SizedBox(height: 20),
                 const Text(
                   'A customizable two-player word grid game featuring auto-calculated word lengths, '
