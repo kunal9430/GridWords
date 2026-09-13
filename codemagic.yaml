@@ -12,6 +12,12 @@ workflows:
       - name: Set app display name to "Grid Words"
         script: |
           sed -i '' 's/android:label="[^"]*"/android:label="Grid Words"/' android/app/src/main/AndroidManifest.xml
+      - name: Set applicationId
+        script: |
+          # Real, unique, reverse-domain package name for Uptodown.
+          # IMPORTANT: once your first version is submitted/live, this
+          # can never change without becoming a brand-new listing.
+          find android \( -name "build.gradle" -o -name "build.gradle.kts" \) -exec sed -i '' 's/com\.example\.grid_word_game/com.kunalkumar.gridwords/g' {} +
       - name: Get Flutter packages
         script: |
           flutter packages pub get
