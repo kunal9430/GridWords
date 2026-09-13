@@ -1,11 +1,13 @@
-/// Central place for the app's Play Store link.
+/// Central place for the app's download link (used by the "Share with
+/// friends" and "Share result" buttons).
 ///
-/// IMPORTANT: `PACKAGE_NAME` below is a placeholder. Once you've set your
-/// real applicationId in android/app/build.gradle (e.g.
-/// com.kunalkumar.gridwords) and the app is live on the Play Store,
-/// replace PACKAGE_NAME with that exact applicationId so the "Share with
-/// friends" and "Share result" buttons link straight to your store listing.
+/// IMPORTANT: `downloadUrl` below is a PLACEHOLDER. Once your app's page is
+/// live on Uptodown, replace the value below with the exact page URL, e.g.
+/// `https://gridwords.en.uptodown.com/android`.
 class AppLinks {
-  static const String playStoreUrl =
-      'https://play.google.com/store/apps/details?id=PACKAGE_NAME';
+  static const String downloadUrl =
+      'https://gridwords.en.uptodown.com/android'; // TODO: replace with your real Uptodown URL
+
+  /// Kept for backwards compatibility with any old references.
+  static const String playStoreUrl = downloadUrl;
 }

@@ -79,7 +79,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'by Kunal Kumar',
+                  'by Kunal Kumar 😎',
                   style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
                 ),
               ],

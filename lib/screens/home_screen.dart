@@ -24,7 +24,7 @@ class HomeScreen extends StatelessWidget {
             onPressed: () => Share.share(
               '🎮 Check out Grid Words! A fun word-building board game '
               'for two players — build words together on a custom grid and keep score as you play.\n\n'
-              'Get it here: ${AppLinks.playStoreUrl}',
+              'Get it here: ${AppLinks.downloadUrl}',
               subject: 'Grid Words',
             ),
           ),
