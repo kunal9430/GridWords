@@ -68,6 +68,16 @@ class RulesScreen extends StatelessWidget {
                     'Tap any previously locked cell and use "Clear Selected" to wipe it. Use "Clear Board" '
                     'to reset every cell on the grid back to empty (confirmation required).',
               ),
+              _RuleSection(
+                number: '8',
+                title: 'Capturing a Word',
+                body:
+                    'Tap "Capture" at any time to spell out a word from letters already on the board: tap '
+                    'the filled cells in order (any direction — the app just records your tap order), then '
+                    'tap "Save Word." If that exact word was already captured earlier in this match, you\'ll '
+                    'get a warning and it won\'t save again — check the list icon in the top bar any time to '
+                    'see every word captured so far.',
+              ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

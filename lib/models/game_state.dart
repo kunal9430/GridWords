@@ -19,6 +19,11 @@ class GameState {
   List<List<bool>> locked;
   DateTime lastSaved;
 
+  /// Words already captured this match via "Capture Word" (uppercase,
+  /// in the order they were saved). Shared across both players — once a
+  /// word is captured, neither player can capture it again this match.
+  List<String> usedWords;
+
   /// Which player's turn is currently active: 1 or 2. Can change either
   /// automatically (after a score is applied) or manually (the player
   /// taps the other player's card to claim the turn).
@@ -61,9 +66,11 @@ class GameState {
     List<List<String>>? grid,
     List<List<bool>>? locked,
     DateTime? lastSaved,
+    List<String>? usedWords,
   })  : grid = grid ?? List.generate(rows, (_) => List.generate(cols, (_) => '')),
         locked = locked ?? List.generate(rows, (_) => List.generate(cols, (_) => false)),
-        lastSaved = lastSaved ?? DateTime.now();
+        lastSaved = lastSaved ?? DateTime.now(),
+        usedWords = usedWords ?? [];
 
   /// Max Word Length = max(Rows, Columns). Both dimensions are capped
   /// during setup (1 to 10), so this is always between 1 and 10.
@@ -76,6 +83,23 @@ class GameState {
   /// record — i.e. the match is truly finished, not just mid-way through
   /// scoring the last letter placed.
   bool get isComplete => isBoardFull && !scoringArmed;
+
+  /// Normalizes a captured word the same way every time (trim + uppercase)
+  /// so "cat", "Cat", and " CAT " are all treated as the same word.
+  static String normalizeWord(String word) => word.trim().toUpperCase();
+
+  /// True if [word] (any casing/whitespace) has already been captured
+  /// this match.
+  bool isWordUsed(String word) => usedWords.contains(normalizeWord(word));
+
+  /// Records [word] as captured this match. Does nothing if it's already
+  /// present (callers should check [isWordUsed] first to warn the player).
+  void addUsedWord(String word) {
+    final normalized = normalizeWord(word);
+    if (!usedWords.contains(normalized)) {
+      usedWords.add(normalized);
+    }
+  }
 
   /// Extracts the first letter of every whitespace-separated word in
   /// [name] and uppercases them, e.g. "Rajat Rai" -> "RR". Kept for any
@@ -125,6 +149,7 @@ class GameState {
       'grid': grid,
       'locked': locked,
       'lastSaved': lastSaved.toIso8601String(),
+      'usedWords': usedWords,
     };
   }
 
@@ -158,6 +183,9 @@ class GameState {
               (row) => (row as List<dynamic>).map((e) => e as bool).toList())
           .toList(),
       lastSaved: DateTime.parse(json['lastSaved'] as String),
+      // Older saves (from before this feature existed) simply won't have
+      // this key — default to an empty list so they still load fine.
+      usedWords: (json['usedWords'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 

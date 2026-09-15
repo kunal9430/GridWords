@@ -25,6 +25,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int? selectedRow;
   int? selectedCol;
 
+  // ---------------------------------------------------------------------
+  // Capture Word mode (ephemeral, UI-only): while active, tapping locked
+  // cells appends them (in tap order) to the word being spelled out.
+  // Nothing is saved to GameState.usedWords until "Save Word" is tapped.
+  // ---------------------------------------------------------------------
+  bool _capturingWord = false;
+  final List<List<int>> _captureCells = []; // ordered [row, col] pairs
+
+  String get _capturedWordSoFar =>
+      _captureCells.map((rc) => state.grid[rc[0]][rc[1]]).join();
+
   // Guards the celebratory dialog so it only ever pops up once per
   // completion event, not every rebuild — and not at all when simply
   // resuming a match that was already finished when it was saved.
@@ -66,6 +77,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------
 
   void _onCellTap(int r, int c) {
+    if (_capturingWord) {
+      _onCaptureCellTap(r, c);
+      return;
+    }
     // Highlighting a cell is always allowed — even while the Numeric
     // Strip is armed — the Alphabet Bank itself stays disabled until the
     // pallet is closed, so no letter can actually be entered meanwhile.
@@ -75,8 +90,99 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // Capture Word mode
+  // ---------------------------------------------------------------------
+
+  void _startCapture() {
+    setState(() {
+      _capturingWord = true;
+      _captureCells.clear();
+      // Letter placement and capture selection are mutually exclusive.
+      selectedRow = null;
+      selectedCol = null;
+    });
+  }
+
+  void _cancelCapture() {
+    setState(() {
+      _capturingWord = false;
+      _captureCells.clear();
+    });
+  }
+
+  /// Tapping a locked cell while capturing adds it to the sequence.
+  /// Tapping a cell already in the sequence removes it and everything
+  /// after it, so a misclick is easy to undo without starting over.
+  /// Empty (unlocked) cells have no letter and are ignored.
+  void _onCaptureCellTap(int r, int c) {
+    if (!state.locked[r][c]) return;
+    setState(() {
+      final existingIndex = _captureCells.indexWhere((rc) => rc[0] == r && rc[1] == c);
+      if (existingIndex != -1) {
+        _captureCells.removeRange(existingIndex, _captureCells.length);
+      } else {
+        _captureCells.add([r, c]);
+      }
+    });
+  }
+
+  void _saveCapturedWord() {
+    final word = _capturedWordSoFar;
+    if (word.trim().length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least 2 letters to capture a word.')),
+      );
+      return;
+    }
+    if (state.isWordUsed(word)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ "$word" has already been used this game.')),
+      );
+      setState(() {
+        _capturingWord = false;
+        _captureCells.clear();
+      });
+      return;
+    }
+    setState(() {
+      state.addUsedWord(word);
+      _capturingWord = false;
+      _captureCells.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('✅ "$word" captured!')),
+    );
+  }
+
+  void _showUsedWordsDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Used Words'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: state.usedWords.isEmpty
+              ? const Text('No words captured yet.')
+              : SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: state.usedWords
+                        .map((w) => Chip(label: Text(w)))
+                        .toList(),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   void _onLetterTap(String letter) {
-    if (state.scoringArmed) return;
+    if (state.scoringArmed || _capturingWord) return;
     if (selectedRow == null || selectedCol == null) return;
     final r = selectedRow!;
     final c = selectedCol!;
@@ -137,7 +243,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// even while the Numeric Strip is armed — switching simply closes the
   /// pallet again rather than being blocked by it.
   void _switchTurn(int playerNumber) {
-    if (state.isComplete) return;
+    if (state.isComplete || _capturingWord) return;
     if (state.currentTurn == playerNumber) return;
     setState(() {
       state.currentTurn = playerNumber;
@@ -269,6 +375,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final letter = state.grid[r][c];
     final letterColor = isDark ? Colors.indigo.shade100 : Colors.indigo.shade700;
     final fontSize = (cellSize * 0.42).clamp(10.0, 34.0);
+    final captureIndex = _capturingWord ? _captureCells.indexWhere((rc) => rc[0] == r && rc[1] == c) : -1;
+    final isCaptured = captureIndex != -1;
 
     return GestureDetector(
       onTap: () => _onCellTap(r, c),
@@ -277,13 +385,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         height: cellSize - 3,
         margin: const EdgeInsets.all(1.5),
         decoration: BoxDecoration(
-          color: isLocked
-              ? (isDark ? Colors.indigo.shade900 : const Color(0xFFDDE4FF))
-              : (isDark ? const Color(0xFF1E1E28) : Colors.white),
+          color: isCaptured
+              ? (isDark ? Colors.teal.shade900 : const Color(0xFFCFF3EA))
+              : isLocked
+                  ? (isDark ? Colors.indigo.shade900 : const Color(0xFFDDE4FF))
+                  : (isDark ? const Color(0xFF1E1E28) : Colors.white),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: isSelected ? Colors.deepOrange : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
-            width: isSelected ? 2.5 : 1,
+            color: isCaptured
+                ? Colors.teal
+                : isSelected
+                    ? Colors.deepOrange
+                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+            width: isCaptured || isSelected ? 2.5 : 1,
           ),
         ),
         child: Stack(
@@ -296,11 +410,27 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             ),
             // Lock icon gives locked cells a non-color-dependent
             // affordance for colorblind accessibility.
-            if (isLocked && cellSize > 26)
+            if (isLocked && cellSize > 26 && !isCaptured)
               Positioned(
                 right: 2,
                 bottom: 1,
                 child: Icon(Icons.lock, size: (cellSize * 0.18).clamp(7.0, 12.0), color: letterColor.withOpacity(0.65)),
+              ),
+            // Order badge shows this cell's position in the word being
+            // captured, so the player can see at a glance which letters
+            // (and in what order) they've selected so far.
+            if (isCaptured && cellSize > 20)
+              Positioned(
+                left: 2,
+                top: 1,
+                child: CircleAvatar(
+                  radius: (cellSize * 0.15).clamp(7.0, 11.0),
+                  backgroundColor: Colors.teal,
+                  child: Text(
+                    '${captureIndex + 1}',
+                    style: TextStyle(fontSize: (cellSize * 0.16).clamp(7.0, 11.0), color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
               ),
           ],
         ),
@@ -386,6 +516,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget _buildBottomPanel() {
     if (state.isComplete) return _buildGameOverPanel();
     final bankEnabled = !state.scoringArmed &&
+        !_capturingWord &&
         selectedRow != null &&
         selectedCol != null &&
         !state.locked[selectedRow!][selectedCol!];
@@ -393,8 +524,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildScoreboard() {
-    final p1ControlsEnabled = state.currentTurn == 1 && !state.isComplete;
-    final p2ControlsEnabled = state.currentTurn == 2 && !state.isComplete;
+    final p1ControlsEnabled = state.currentTurn == 1 && !state.isComplete && !_capturingWord;
+    final p2ControlsEnabled = state.currentTurn == 2 && !state.isComplete && !_capturingWord;
     return Column(
       children: [
         Row(
@@ -430,7 +561,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: NumericStrip(
             maxNumber: state.maxWordLength,
-            enabled: state.scoringArmed,
+            enabled: state.scoringArmed && !_capturingWord,
             onNumberTap: _onNumberTap,
           ),
         ),
@@ -469,6 +600,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildCaptureBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final word = _capturedWordSoFar;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.teal.shade900 : const Color(0xFFE0F7F1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.teal),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              word.isEmpty ? 'Tap letters in order…' : word,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.teal.shade700),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          TextButton(onPressed: _cancelCapture, child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: word.trim().length >= 2 ? _saveCapturedWord : null,
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+            child: const Text('Save Word'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionRibbon() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
@@ -485,12 +647,29 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
-          _ribbonButton(icon: Icons.delete_sweep, label: 'Board', onPressed: _clearBoard, color: Colors.red),
+          _ribbonButton(
+              icon: Icons.delete_sweep,
+              label: 'Board',
+              onPressed: _capturingWord ? null : _clearBoard,
+              color: Colors.red),
           const SizedBox(width: 6),
           _ribbonButton(
-              icon: Icons.backspace_outlined, label: 'Cell', onPressed: _clearSelected, color: Colors.orange.shade800),
+              icon: Icons.backspace_outlined,
+              label: 'Cell',
+              onPressed: _capturingWord ? null : _clearSelected,
+              color: Colors.orange.shade800),
           const SizedBox(width: 6),
-          _ribbonButton(icon: Icons.save, label: 'Save', onPressed: _saveGame, color: const Color(0xFF5B4FE9)),
+          _ribbonButton(
+              icon: Icons.save,
+              label: 'Save',
+              onPressed: _capturingWord ? null : _saveGame,
+              color: const Color(0xFF5B4FE9)),
+          const SizedBox(width: 6),
+          _ribbonButton(
+              icon: Icons.text_fields,
+              label: 'Capture',
+              onPressed: state.isComplete ? null : (_capturingWord ? null : _startCapture),
+              color: Colors.teal),
         ],
       ),
     );
@@ -514,6 +693,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           title: const Text('Active Game'),
           actions: [
             IconButton(
+              tooltip: 'Used words',
+              icon: const Icon(Icons.list_alt),
+              onPressed: _showUsedWordsDialog,
+            ),
+            IconButton(
               tooltip: 'Share match',
               icon: const Icon(Icons.share),
               onPressed: _shareResult,
@@ -526,6 +710,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               final isLandscape = orientation == Orientation.landscape;
               return Column(
                 children: [
+                  if (_capturingWord) _buildCaptureBar(),
                   Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: _buildScoreboard(),
