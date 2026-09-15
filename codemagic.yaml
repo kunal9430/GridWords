@@ -1,0 +1,80 @@
+workflows:
+  android-apk-build:
+    name: Build Android APK
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+    scripts:
+      - name: Generate missing Android runner
+        script: |
+          flutter create --platforms=android .
+      - name: Set app display name to "Grid Words"
+        script: |
+          sed -i '' 's/android:label="[^"]*"/android:label="Grid Words"/' android/app/src/main/AndroidManifest.xml
+      - name: Set applicationId
+        script: |
+          # Real, unique, reverse-domain package name for Uptodown.
+          # IMPORTANT: once your first version is submitted/live, this
+          # can never change without becoming a brand-new listing.
+          # NOTE: only the applicationId line is touched -- namespace
+          # must stay as-is since it has to match MainActivity.kt's
+          # actual package/folder, or the app crashes on launch.
+          find android \( -name "build.gradle" -o -name "build.gradle.kts" \) -exec sed -i '' '/applicationId/s/com\.example\.grid_word_game/com.kunalkumar.gridwords/' {} +
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+      - name: Build Android APK
+        script: |
+          flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+
+  android-appbundle-release:
+    name: Build Android App Bundle (Play Store)
+    max_build_duration: 30
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+      # Configure these in Codemagic's UI under this workflow's
+      # Environment variables (marked "Secure") instead of committing
+      # them here:
+      #   CM_KEYSTORE           -> base64-encoded .jks/.keystore file
+      #   CM_KEYSTORE_PASSWORD
+      #   CM_KEY_ALIAS
+      #   CM_KEY_PASSWORD
+    scripts:
+      - name: Generate missing Android runner
+        script: |
+          flutter create --platforms=android .
+      - name: Set app display name to "Grid Words"
+        script: |
+          sed -i '' 's/android:label="[^"]*"/android:label="Grid Words"/' android/app/src/main/AndroidManifest.xml
+      - name: Set applicationId
+        script: |
+          # Replace com.example.grid_word_game with your real, unique,
+          # reverse-domain package name BEFORE your first Play Store
+          # upload -- it can never change after that. Double check the
+          # current value in android/app/build.gradle first; it may
+          # differ slightly depending on your Flutter version.
+          # NOTE: only the applicationId line is touched -- namespace
+          # must stay as-is since it has to match MainActivity.kt's
+          # actual package/folder, or the app crashes on launch.
+          find android \( -name "build.gradle" -o -name "build.gradle.kts" \) -exec sed -i '' '/applicationId/s/com\.example\.grid_word_game/com.kunalkumar.gridwords/' {} +
+      - name: Set up release signing
+        script: |
+          echo $CM_KEYSTORE | base64 --decode > /tmp/release.keystore
+          cat >> android/key.properties <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=/tmp/release.keystore
+          EOF
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+      - name: Build Android App Bundle
+        script: |
+          flutter build appbundle --release
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
