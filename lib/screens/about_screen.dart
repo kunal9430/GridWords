@@ -14,7 +14,7 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.grid_on, size: 64, color: Color(0xFF5B4FE9)),
+                Icon(Icons.grid_on, size: 64, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
                 const Text(
                   'Grid Words',

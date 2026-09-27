@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../config/app_links.dart';
+import '../services/profile_service.dart';
 import 'setup_screen.dart';
 import 'saved_games_screen.dart';
 import 'rules_screen.dart';
 import 'about_screen.dart';
+import 'settings_screen.dart';
 import '../services/theme_controller.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -12,12 +15,19 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         foregroundColor: Theme.of(context).colorScheme.onSurface,
         elevation: 0,
         actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          ),
           IconButton(
             tooltip: 'Share with friends',
             icon: const Icon(Icons.share),
@@ -45,58 +55,97 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.grid_on, size: 72, color: Color(0xFF5B4FE9)),
-                const SizedBox(height: 12),
-                const Text(
-                  'Grid Words',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF5B4FE9)),
-                ),
-                const SizedBox(height: 40),
-                _HomeButton(
-                  label: 'Start New Game',
-                  icon: Icons.play_arrow,
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SetupScreen()),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24.0),
+                  child: ValueListenableBuilder<Profile>(
+                    valueListenable: ProfileService.current,
+                    builder: (context, profile, _) {
+                      final hasName = profile.name.trim().isNotEmpty;
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (hasName || profile.hasPhoto) ...[
+                            CircleAvatar(
+                              radius: 34,
+                              backgroundColor: primary.withOpacity(0.15),
+                              backgroundImage:
+                                  profile.hasPhoto ? MemoryImage(base64Decode(profile.photoBase64!)) : null,
+                              child: !profile.hasPhoto ? Icon(Icons.person, size: 34, color: primary) : null,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              hasName ? 'Welcome back, ${profile.name}!' : 'Welcome back!',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: primary),
+                            ),
+                            const SizedBox(height: 18),
+                          ] else ...[
+                            Icon(Icons.grid_on, size: 72, color: primary),
+                            const SizedBox(height: 12),
+                          ],
+                          Text(
+                            'Grid Words',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: primary),
+                          ),
+                          const SizedBox(height: 40),
+                          _HomeButton(
+                            label: 'Start New Game',
+                            icon: Icons.play_arrow,
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SetupScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _HomeButton(
+                            label: 'Resume Saved Game',
+                            icon: Icons.folder_open,
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SavedGamesScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _HomeButton(
+                            label: 'Rules / How to Play',
+                            icon: Icons.menu_book,
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const RulesScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _HomeButton(
+                            label: 'About',
+                            icon: Icons.info_outline,
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const AboutScreen()),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(height: 16),
-                _HomeButton(
-                  label: 'Resume Saved Game',
-                  icon: Icons.folder_open,
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SavedGamesScreen()),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _HomeButton(
-                  label: 'Rules / How to Play',
-                  icon: Icons.menu_book,
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RulesScreen()),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _HomeButton(
-                  label: 'About',
-                  icon: Icons.info_outline,
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AboutScreen()),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            // Developer credit, pinned to the bottom of the screen the
+            // player lands on when opening the app.
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10, top: 4),
+              child: Text(
+                'Developed by Kunal Kumar 😎',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -117,7 +166,7 @@ class _HomeButton extends StatelessWidget {
       height: 56,
       child: ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF5B4FE9),
+          backgroundColor: Theme.of(context).colorScheme.primary,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           elevation: 3,

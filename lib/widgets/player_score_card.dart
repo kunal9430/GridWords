@@ -50,7 +50,7 @@ class PlayerScoreCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isCurrentTurn ? accentColor.withOpacity(isDark ? 0.24 : 0.13) : surfaceColor,
+          color: isCurrentTurn ? accentColor.withOpacity(isDark ? 0.18 : 0.13) : surfaceColor,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isCurrentTurn ? accentColor : accentColor.withOpacity(isDark ? 0.5 : 0.3),
@@ -58,7 +58,7 @@ class PlayerScoreCard extends StatelessWidget {
           ),
           boxShadow: [
             if (isCurrentTurn)
-              BoxShadow(color: accentColor.withOpacity(0.45), blurRadius: 14, spreadRadius: 1)
+              BoxShadow(color: accentColor.withOpacity(0.32), blurRadius: 10, spreadRadius: 0.5)
             else
               BoxShadow(
                 color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),

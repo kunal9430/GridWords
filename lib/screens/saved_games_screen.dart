@@ -127,12 +127,14 @@ class _SavedGamesScreenState extends State<SavedGamesScreen> {
                                         const SizedBox(width: 8),
                                         ElevatedButton.icon(
                                           style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFF5B4FE9), foregroundColor: Colors.white),
-                                          onPressed: () {
-                                            Navigator.push(
+                                              backgroundColor: Theme.of(context).colorScheme.primary,
+                                              foregroundColor: Colors.white),
+                                          onPressed: () async {
+                                            await Navigator.push(
                                               context,
                                               MaterialPageRoute(builder: (_) => GameScreen(gameState: game)),
                                             );
+                                            _loadGames();
                                           },
                                           icon: const Icon(Icons.play_arrow),
                                           label: const Text('Resume'),
