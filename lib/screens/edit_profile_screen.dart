@@ -228,10 +228,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email (optional)',
-                          helperText: 'Not used for sign-in',
-                        ),
+                        decoration: const InputDecoration(labelText: 'Email (optional)'),
                         keyboardType: TextInputType.emailAddress,
                         validator: _validateEmail,
                       ),

@@ -155,7 +155,6 @@ class _ProfileTab extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit Profile Details'),
-              subtitle: const Text('Name, email, and photo — used to prefill new games and greet you on Home'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(
                 context,
@@ -451,8 +450,7 @@ class _BrightnessCard extends StatelessWidget {
                   ],
                 ),
                 const Text(
-                  'Only changes the screen while Grid Words is open — your device\'s normal '
-                  'brightness is untouched everywhere else and returns the moment you leave.',
+                  'Adjust the game screen brightness',
                   style: TextStyle(fontSize: 11.5, color: Colors.grey),
                 ),
                 if (overrideEnabled) ...[

@@ -32,14 +32,6 @@ class AboutScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 15, height: 1.5),
                 ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Back to Home'),
-                  ),
-                ),
               ],
             ),
           ),
