@@ -1,4 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../config/app_links.dart';
 import '../models/game_state.dart';
@@ -25,10 +31,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int? selectedRow;
   int? selectedCol;
 
+  // ---------------------------------------------------------------------
+  // Capture Word: a floating top banner confirms/warns after each capture
+  // attempt. Auto-dismisses itself after a couple of seconds.
+  // ---------------------------------------------------------------------
+  String? _bannerText;
+  bool _bannerIsWarning = false;
+  Timer? _bannerTimer;
+
   // Guards the celebratory dialog so it only ever pops up once per
   // completion event, not every rebuild — and not at all when simply
   // resuming a match that was already finished when it was saved.
   bool _gameOverDialogShown = false;
+
+  // Wraps the visible game area (scoreboard + grid + bottom panel) so
+  // "Share" can capture exactly what the player currently sees as an image.
+  final GlobalKey _captureBoundaryKey = GlobalKey();
 
   @override
   void initState() {
@@ -45,6 +63,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _bannerTimer?.cancel();
+    _usedWordsScrollController.dispose();
     super.dispose();
   }
 
@@ -73,6 +93,203 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       selectedRow = r;
       selectedCol = c;
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // Capture Word: type (or speak/glide-type via the device keyboard) the
+  // word you formed. Checked against this match's usedWords list.
+  // ---------------------------------------------------------------------
+
+  void _startCapture() {
+    final anyLettersOnBoard = state.locked.any((row) => row.any((cell) => cell));
+    if (!anyLettersOnBoard) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Place some letters on the board before capturing a word.')),
+      );
+      return;
+    }
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Capture Word'),
+          content: TextField(
+            controller: controller,
+            autofocus: true, // opens the device keyboard immediately
+            textCapitalization: TextCapitalization.characters,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(hintText: 'Type, speak, or glide the word'),
+            onSubmitted: (_) => _submitCapturedWord(ctx, controller.text),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => _submitCapturedWord(ctx, controller.text),
+              child: const Text('Save Word'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _submitCapturedWord(BuildContext dialogContext, String rawInput) {
+    // Strip anything that isn't a letter (stray spaces, punctuation the
+    // keyboard/voice-typing might slip in) and uppercase. Single-letter
+    // words are valid.
+    final word = rawInput.replaceAll(RegExp(r'[^A-Za-z]'), '').toUpperCase();
+    if (word.isEmpty) return; // nothing typed — leave the dialog open
+    Navigator.pop(dialogContext);
+    if (state.isWordUsed(word)) {
+      _showTopBanner(word, isWarning: true);
+      return;
+    }
+    setState(() => state.addUsedWord(word));
+    _showTopBanner(word, isWarning: false);
+  }
+
+  void _showTopBanner(String word, {required bool isWarning}) {
+    _bannerTimer?.cancel();
+    setState(() {
+      _bannerText = isWarning ? 'Word : $word 🥲' : 'Word : $word 🤠';
+      _bannerIsWarning = isWarning;
+    });
+    _bannerTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _bannerText = null);
+    });
+  }
+
+  Widget _buildTopBanner() {
+    final bg = _bannerIsWarning ? Colors.amber.shade200 : Colors.green.shade200;
+    final border = _bannerIsWarning ? Colors.amber.shade700 : Colors.green.shade700;
+    final fg = _bannerIsWarning ? Colors.amber.shade900 : Colors.green.shade900;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: border, width: 1.5),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Text(
+        _bannerText ?? '',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: fg),
+      ),
+    );
+  }
+
+  final ScrollController _usedWordsScrollController = ScrollController();
+
+  void _showUsedWordsDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            void deleteWord(String word) {
+              setDialogState(() => state.usedWords.remove(word));
+              setState(() {}); // keep the main screen's copy in sync too
+            }
+
+            return AlertDialog(
+              title: const Text('Used Words'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (state.usedWords.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text('No words captured yet.'),
+                      )
+                    else ...[
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Long-press and drag a word onto the bin below to remove it.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: Scrollbar(
+                          controller: _usedWordsScrollController,
+                          thumbVisibility: true,
+                          trackVisibility: true,
+                          interactive: true,
+                          radius: const Radius.circular(8),
+                          child: SingleChildScrollView(
+                            controller: _usedWordsScrollController,
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: state.usedWords.map((w) {
+                                return LongPressDraggable<String>(
+                                  data: w,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    child: Chip(
+                                      label: Text(w),
+                                      backgroundColor: Colors.red.shade100,
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.3,
+                                    child: Chip(label: Text(w)),
+                                  ),
+                                  child: Chip(label: Text(w)),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      DragTarget<String>(
+                        onAccept: deleteWord,
+                        builder: (ctx, candidateData, rejectedData) {
+                          final isHovering = candidateData.isNotEmpty;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              color: isHovering ? Colors.red.shade100 : Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isHovering ? Colors.red : Colors.grey.shade400,
+                                width: isHovering ? 2 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.delete_outline, color: isHovering ? Colors.red : Colors.grey.shade600),
+                                const SizedBox(width: 6),
+                                Text(
+                                  isHovering ? 'Release to delete' : 'Drop here to delete',
+                                  style: TextStyle(color: isHovering ? Colors.red : Colors.grey.shade600),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Close')),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _onLetterTap(String letter) {
@@ -129,6 +346,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       state.scoringArmed = false;
       state.isAddMode = true;
     });
+    if (state.isComplete) {
+      // Persist immediately, keyed by the same id, so a resumed match's
+      // history entry reflects the finished result right away rather than
+      // depending on the player remembering to tap Save.
+      StorageService.saveGame(state);
+    }
     _maybeShowGameOverDialog();
   }
 
@@ -187,12 +410,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       setState(() {
         state.grid = List.generate(state.rows, (_) => List.generate(state.cols, (_) => ''));
         state.locked = List.generate(state.rows, (_) => List.generate(state.cols, (_) => false));
+        state.score1 = 0;
+        state.score2 = 0;
         selectedRow = null;
         selectedCol = null;
         state.scoringArmed = false;
         state.pendingRow = null;
         state.pendingCol = null;
         state.isAddMode = true;
+        state.usedWords.clear();
         _gameOverDialogShown = false;
       });
     }
@@ -250,13 +476,45 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _shareResult() {
-    Share.share(
+  String _shareText() =>
       '🎮 Grid Words result:\n'
       '${state.player1Initials}: ${state.score1}  vs  ${state.player2Initials}: ${state.score2}\n'
       '${_winnerLabel()}\n\n'
-      'Play Grid Words yourself: ${AppLinks.downloadUrl}',
-    );
+      'Play Grid Words yourself: ${AppLinks.downloadUrl}';
+
+  /// From the Active Game screen, sharing sends BOTH the result text and a
+  /// screenshot of the current board/scoreboard. If the screenshot capture
+  /// fails for any reason, falls back to text-only rather than blocking
+  /// the share entirely.
+  Future<void> _shareResult() async {
+    try {
+      final boundary = _captureBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        await Share.share(_shareText());
+        return;
+      }
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
+      final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        await Share.share(_shareText());
+        return;
+      }
+      final Uint8List pngBytes = byteData.buffer.asUint8List();
+      final tempDir = await getTemporaryDirectory();
+      final file = await File(
+        '${tempDir.path}/grid_words_result_${DateTime.now().millisecondsSinceEpoch}.png',
+      ).create();
+      await file.writeAsBytes(pngBytes);
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: _shareText(),
+        subject: 'Grid Words result',
+      );
+    } catch (_) {
+      // Any failure capturing/writing the screenshot still shouldn't
+      // block sharing the result — fall back to text-only.
+      await Share.share(_shareText());
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -291,6 +549,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             Center(
               child: Text(
                 letter,
+                // This size is already computed from the cell's own pixel
+                // size just above, so it must stay exact — the app-wide
+                // Settings font-size slider (applied globally as a
+                // MediaQuery textScaler in main.dart) is deliberately
+                // opted out of here, or a large slider value would make
+                // letters overflow their fixed-size grid cell.
+                textScaler: TextScaler.noScaling,
                 style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold, color: letterColor),
               ),
             ),
@@ -409,7 +674,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               onAddPressed: () => _setScoreDirection(1, true),
               onMinusPressed: () => _setScoreDirection(1, false),
               onCardTap: () => _switchTurn(1),
-              accentColor: const Color(0xFF5B4FE9),
+              accentColor: Theme.of(context).colorScheme.primary,
             ),
             PlayerScoreCard(
               initials: state.player2Initials,
@@ -421,7 +686,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               onAddPressed: () => _setScoreDirection(2, true),
               onMinusPressed: () => _setScoreDirection(2, false),
               onCardTap: () => _switchTurn(2),
-              accentColor: const Color(0xFF17A398),
+              accentColor: Theme.of(context).colorScheme.tertiary,
             ),
           ],
         ),
@@ -485,12 +750,23 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
       child: Row(
         children: [
-          _ribbonButton(icon: Icons.delete_sweep, label: 'Board', onPressed: _clearBoard, color: Colors.red),
+          _ribbonButton(
+              icon: Icons.delete_sweep, label: 'Board', onPressed: state.isComplete ? null : _clearBoard, color: Colors.red),
           const SizedBox(width: 6),
           _ribbonButton(
-              icon: Icons.backspace_outlined, label: 'Cell', onPressed: _clearSelected, color: Colors.orange.shade800),
+              icon: Icons.backspace_outlined,
+              label: 'Cell',
+              onPressed: state.isComplete ? null : _clearSelected,
+              color: Colors.orange.shade800),
           const SizedBox(width: 6),
-          _ribbonButton(icon: Icons.save, label: 'Save', onPressed: _saveGame, color: const Color(0xFF5B4FE9)),
+          _ribbonButton(
+              icon: Icons.save, label: 'Save', onPressed: _saveGame, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 6),
+          _ribbonButton(
+              icon: Icons.text_fields,
+              label: 'Capture',
+              onPressed: (state.isComplete || !state.locked.any((row) => row.any((cell) => cell))) ? null : _startCapture,
+              color: Colors.teal),
         ],
       ),
     );
@@ -514,6 +790,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           title: const Text('Active Game'),
           actions: [
             IconButton(
+              tooltip: 'Used words',
+              icon: const Icon(Icons.list_alt),
+              onPressed: _showUsedWordsDialog,
+            ),
+            IconButton(
               tooltip: 'Share match',
               icon: const Icon(Icons.share),
               onPressed: _shareResult,
@@ -521,43 +802,83 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ],
         ),
         body: SafeArea(
-          child: OrientationBuilder(
-            builder: (context, orientation) {
-              final isLandscape = orientation == Orientation.landscape;
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: _buildScoreboard(),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: isLandscape
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
+            children: [
+              OrientationBuilder(
+                builder: (context, orientation) {
+                  final isLandscape = orientation == Orientation.landscape;
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: RepaintBoundary(
+                          key: _captureBoundaryKey,
+                          child: Container(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            child: Column(
                               children: [
-                                Expanded(
-                                  flex: 3,
-                                  child: LayoutBuilder(builder: (context, c) => _buildGrid(c)),
+                                Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: _buildScoreboard(),
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(flex: 2, child: _buildBottomPanel()),
-                              ],
-                            )
-                          : Column(
-                              children: [
-                                Expanded(child: LayoutBuilder(builder: (context, c) => _buildGrid(c))),
-                                const SizedBox(height: 8),
-                                _buildBottomPanel(),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    child: isLandscape
+                                        ? Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                flex: 3,
+                                                child: LayoutBuilder(builder: (context, c) => _buildGrid(c)),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(flex: 2, child: _buildBottomPanel()),
+                                            ],
+                                          )
+                                        : Column(
+                                            children: [
+                                              Expanded(child: LayoutBuilder(builder: (context, c) => _buildGrid(c))),
+                                              const SizedBox(height: 8),
+                                              _buildBottomPanel(),
+                                            ],
+                                          ),
+                                  ),
+                                ),
                               ],
                             ),
+                          ),
+                        ),
+                      ),
+                      _buildActionRibbon(),
+                    ],
+                  );
+                },
+              ),
+              // Floating "Word : ..." confirmation/warning banner, centered
+              // just below the app bar. Purely visual — doesn't block taps
+              // on anything underneath it.
+              if (_bannerText != null)
+                Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: TweenAnimationBuilder<double>(
+                        key: ValueKey(_bannerText),
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                        builder: (context, t, child) => Opacity(
+                          opacity: t,
+                          child: Transform.translate(offset: Offset(0, (1 - t) * -14), child: child),
+                        ),
+                        child: _buildTopBanner(),
+                      ),
                     ),
                   ),
-                  _buildActionRibbon(),
-                ],
-              );
-            },
+                ),
+            ],
           ),
         ),
       ),

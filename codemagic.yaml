@@ -9,12 +9,90 @@ workflows:
       - name: Generate missing Android runner
         script: |
           flutter create --platforms=android .
+      - name: Force compileSdk 36 on every Gradle subproject
+        script: |
+          # `file_picker` (and other plugins) hardcode their OWN
+          # compileSdkVersion directly inside their build.gradle -- which
+          # ships inside the package itself, pulled fresh from the pub
+          # cache at build time (NOT part of this repo). So neither
+          # patching android/app's build.gradle nor setting
+          # flutter.compileSdkVersion in local.properties reaches it --
+          # both only affect subprojects that explicitly read that shared
+          # variable, and file_picker's build.gradle just doesn't.
+          #
+          # The reliable fix is a root-level `subprojects { afterEvaluate
+          # { ... } }` hook that force-overwrites compileSdk on every
+          # Android subproject (app AND every plugin) after each one's own
+          # build.gradle has already been evaluated -- so it wins
+          # regardless of what any individual plugin declared. This goes
+          # in settings.gradle(.kts), since that file is always present
+          # (Flutter needs it to wire up the plugin loader), unlike a root
+          # build.gradle(.kts) which some newer templates omit.
+          python3 - <<'PY'
+          import pathlib
+
+          android_dir = pathlib.Path("android")
+          kts = android_dir / "settings.gradle.kts"
+          groovy = android_dir / "settings.gradle"
+
+          marker = "GRID_WORDS_FORCE_COMPILESDK_36"
+
+          if kts.exists():
+              path = kts
+              addition = (
+                  f"\n// {marker}\n"
+                  "gradle.rootProject {\n"
+                  "    subprojects {\n"
+                  "        afterEvaluate {\n"
+                  "            val androidExt = extensions.findByName(\"android\")\n"
+                  "            if (androidExt is com.android.build.gradle.BaseExtension) {\n"
+                  "                androidExt.compileSdkVersion(36)\n"
+                  "            }\n"
+                  "        }\n"
+                  "    }\n"
+                  "}\n"
+              )
+          elif groovy.exists():
+              path = groovy
+              addition = (
+                  f"\n// {marker}\n"
+                  "gradle.rootProject {\n"
+                  "    subprojects { sub ->\n"
+                  "        sub.afterEvaluate {\n"
+                  "            if (sub.hasProperty('android')) {\n"
+                  "                sub.android {\n"
+                  "                    compileSdkVersion 36\n"
+                  "                }\n"
+                  "            }\n"
+                  "        }\n"
+                  "    }\n"
+                  "}\n"
+              )
+          else:
+              raise SystemExit("No android/settings.gradle(.kts) found")
+
+          text = path.read_text()
+          if marker not in text:
+              path.write_text(text + addition)
+          PY
       - name: Set app display name to "Grid Words"
         script: |
           sed -i '' 's/android:label="[^"]*"/android:label="Grid Words"/' android/app/src/main/AndroidManifest.xml
+      - name: Set applicationId
+        script: |
+          # Real, unique, reverse-domain package name for Uptodown.
+          # IMPORTANT: once your first version is submitted/live, this
+          # can never change without becoming a brand-new listing.
+          # NOTE: only the applicationId line is touched -- namespace
+          # must stay as-is since it has to match MainActivity.kt's
+          # actual package/folder, or the app crashes on launch.
+          find android \( -name "build.gradle" -o -name "build.gradle.kts" \) -exec sed -i '' '/applicationId/s/com\.example\.grid_word_game/com.kunalkumar.gridwords/' {} +
       - name: Get Flutter packages
         script: |
           flutter packages pub get
+      - name: Generate launcher icon from assets/icon
+        script: |
+          dart run flutter_launcher_icons
       - name: Build Android APK
         script: |
           flutter build apk --release
@@ -38,6 +116,60 @@ workflows:
       - name: Generate missing Android runner
         script: |
           flutter create --platforms=android .
+      - name: Force compileSdk 36 on every Gradle subproject
+        script: |
+          # See the matching step in the android-apk-build workflow above
+          # for why this is needed (short version: file_picker's own
+          # build.gradle hardcodes its compileSdk, so it has to be
+          # force-overridden from settings.gradle after the fact -- editing
+          # our own repo's Gradle files never reaches it).
+          python3 - <<'PY'
+          import pathlib
+
+          android_dir = pathlib.Path("android")
+          kts = android_dir / "settings.gradle.kts"
+          groovy = android_dir / "settings.gradle"
+
+          marker = "GRID_WORDS_FORCE_COMPILESDK_36"
+
+          if kts.exists():
+              path = kts
+              addition = (
+                  f"\n// {marker}\n"
+                  "gradle.rootProject {\n"
+                  "    subprojects {\n"
+                  "        afterEvaluate {\n"
+                  "            val androidExt = extensions.findByName(\"android\")\n"
+                  "            if (androidExt is com.android.build.gradle.BaseExtension) {\n"
+                  "                androidExt.compileSdkVersion(36)\n"
+                  "            }\n"
+                  "        }\n"
+                  "    }\n"
+                  "}\n"
+              )
+          elif groovy.exists():
+              path = groovy
+              addition = (
+                  f"\n// {marker}\n"
+                  "gradle.rootProject {\n"
+                  "    subprojects { sub ->\n"
+                  "        sub.afterEvaluate {\n"
+                  "            if (sub.hasProperty('android')) {\n"
+                  "                sub.android {\n"
+                  "                    compileSdkVersion 36\n"
+                  "                }\n"
+                  "            }\n"
+                  "        }\n"
+                  "    }\n"
+                  "}\n"
+              )
+          else:
+              raise SystemExit("No android/settings.gradle(.kts) found")
+
+          text = path.read_text()
+          if marker not in text:
+              path.write_text(text + addition)
+          PY
       - name: Set app display name to "Grid Words"
         script: |
           sed -i '' 's/android:label="[^"]*"/android:label="Grid Words"/' android/app/src/main/AndroidManifest.xml
@@ -48,7 +180,10 @@ workflows:
           # upload -- it can never change after that. Double check the
           # current value in android/app/build.gradle first; it may
           # differ slightly depending on your Flutter version.
-          find android -name "build.gradle" -exec sed -i '' 's/com\.example\.grid_word_game/com.kunalkumar.gridwords/g' {} +
+          # NOTE: only the applicationId line is touched -- namespace
+          # must stay as-is since it has to match MainActivity.kt's
+          # actual package/folder, or the app crashes on launch.
+          find android \( -name "build.gradle" -o -name "build.gradle.kts" \) -exec sed -i '' '/applicationId/s/com\.example\.grid_word_game/com.kunalkumar.gridwords/' {} +
       - name: Set up release signing
         script: |
           echo $CM_KEYSTORE | base64 --decode > /tmp/release.keystore
@@ -58,9 +193,98 @@ workflows:
           keyAlias=$CM_KEY_ALIAS
           storeFile=/tmp/release.keystore
           EOF
+      - name: Wire key.properties into Gradle release signing
+        script: |
+          # `flutter create` generates a build.gradle(.kts) whose `release`
+          # build type signing config defaults to signingConfigs.debug --
+          # key.properties above does nothing on its own. This adds a real
+          # `release` signingConfig that reads key.properties and points
+          # the release build type at it, so the AAB actually ships signed
+          # with the production keystore instead of silently falling back
+          # to the debug key. Handles both the Groovy and Kotlin DSL
+          # templates Flutter may generate.
+          python3 - <<'PY'
+          import re, pathlib
+
+          app_dir = pathlib.Path("android/app")
+          kts = app_dir / "build.gradle.kts"
+          groovy = app_dir / "build.gradle"
+
+          if kts.exists():
+              path = kts
+              text = path.read_text()
+
+              if "keystoreProperties" not in text:
+                  prelude = (
+                      'import java.util.Properties\n'
+                      'import java.io.FileInputStream\n\n'
+                      'val keystoreProperties = Properties()\n'
+                      'val keystorePropertiesFile = rootProject.file("key.properties")\n'
+                      'if (keystorePropertiesFile.exists()) {\n'
+                      '    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n'
+                      '}\n\n'
+                  )
+                  # Insert right after the closing brace of the plugins {} block.
+                  text = re.sub(r'(\}\s*\n)', r'\1\n' + prelude, text, count=1)
+
+              if "signingConfigs {" not in text:
+                  signing_block = (
+                      '    signingConfigs {\n'
+                      '        create("release") {\n'
+                      '            keyAlias = keystoreProperties["keyAlias"] as String?\n'
+                      '            keyPassword = keystoreProperties["keyPassword"] as String?\n'
+                      '            storeFile = keystoreProperties["storeFile"]?.let { file(it) }\n'
+                      '            storePassword = keystoreProperties["storePassword"] as String?\n'
+                      '        }\n'
+                      '    }\n\n'
+                  )
+                  text = re.sub(r'(\bbuildTypes\s*\{)', signing_block + r'    \1', text, count=1)
+
+              text = text.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+              )
+              path.write_text(text)
+
+          elif groovy.exists():
+              path = groovy
+              text = path.read_text()
+
+              if "keystoreProperties" not in text:
+                  prelude = (
+                      "def keystoreProperties = new Properties()\n"
+                      "def keystorePropertiesFile = rootProject.file('key.properties')\n"
+                      "if (keystorePropertiesFile.exists()) {\n"
+                      "    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n"
+                      "}\n\n"
+                  )
+                  text = re.sub(r'(\bandroid\s*\{)', prelude + r'\1', text, count=1)
+
+              if "signingConfigs {" not in text:
+                  signing_block = (
+                      "    signingConfigs {\n"
+                      "        release {\n"
+                      "            keyAlias keystoreProperties['keyAlias']\n"
+                      "            keyPassword keystoreProperties['keyPassword']\n"
+                      "            storeFile file(keystoreProperties['storeFile'])\n"
+                      "            storePassword keystoreProperties['storePassword']\n"
+                      "        }\n"
+                      "    }\n\n"
+                  )
+                  text = re.sub(r'(\bbuildTypes\s*\{)', signing_block + r'    \1', text, count=1)
+
+              text = re.sub(r'signingConfig\s+signingConfigs\.debug', 'signingConfig signingConfigs.release', text)
+              path.write_text(text)
+
+          else:
+              raise SystemExit("No android/app/build.gradle(.kts) found to wire signing into")
+          PY
       - name: Get Flutter packages
         script: |
           flutter packages pub get
+      - name: Generate launcher icon from assets/icon
+        script: |
+          dart run flutter_launcher_icons
       - name: Build Android App Bundle
         script: |
           flutter build appbundle --release

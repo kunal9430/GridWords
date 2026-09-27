@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';
 import '../models/game_state.dart';
+import '../services/profile_service.dart';
 import 'game_screen.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -28,6 +29,13 @@ class _SetupScreenState extends State<SetupScreen> {
     super.initState();
     _rowsController.addListener(_updateDerivedFields);
     _colsController.addListener(_updateDerivedFields);
+    _prefillProfileName();
+  }
+
+  Future<void> _prefillProfileName() async {
+    final savedName = await ProfileService.loadDisplayName();
+    if (!mounted || savedName.isEmpty) return;
+    setState(() => _p1Controller.text = savedName);
   }
 
   void _updateDerivedFields() {
@@ -70,10 +78,10 @@ class _SetupScreenState extends State<SetupScreen> {
     }
     final n = int.tryParse(value.trim());
     if (n == null) {
-      return 'Enter a valid whole number';
+      return 'Select a number from $_minDimension to $_maxDimension';
     }
     if (n < _minDimension || n > _maxDimension) {
-      return 'Must be between $_minDimension and $_maxDimension';
+      return 'Select a number from $_minDimension to $_maxDimension';
     }
     return null;
   }
@@ -146,7 +154,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   controller: _rowsController,
                   decoration: const InputDecoration(
                     labelText: 'Total Rows (R)',
-                    helperText: 'Whole number from 1 to 10',
+                    helperText: 'Select number from 1 to 10',
                   ),
                   keyboardType: TextInputType.number,
                   validator: _validateDimension,
@@ -156,7 +164,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   controller: _colsController,
                   decoration: const InputDecoration(
                     labelText: 'Total Columns (C)',
-                    helperText: 'Whole number from 1 to 10',
+                    helperText: 'Select number from 1 to 10',
                   ),
                   keyboardType: TextInputType.number,
                   validator: _validateDimension,

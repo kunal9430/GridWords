@@ -11,13 +11,28 @@ dependencies:
     sdk: flutter
   shared_preferences: ^2.2.2
   share_plus: ^10.1.2
+  path_provider: ^2.1.1
+  google_fonts: ^6.2.1
+  screen_brightness: ^2.1.0
   characters: ^1.3.0
   cupertino_icons: ^1.0.6
+  image_picker: ^1.1.2
+  file_picker: ^8.1.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
+
+# Config consumed by `dart run flutter_launcher_icons` (invoked from
+# codemagic.yaml right after the Android project is generated) to set
+# the app's launcher icon on every density from one source PNG.
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#5B4FE9"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"

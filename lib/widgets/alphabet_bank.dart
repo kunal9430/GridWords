@@ -43,7 +43,9 @@ class AlphabetBank extends StatelessWidget {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    backgroundColor: enabled ? const Color(0xFF5B4FE9) : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+                    backgroundColor: enabled
+                        ? Theme.of(context).colorScheme.primary
+                        : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     elevation: enabled ? 2 : 0,

@@ -68,6 +68,16 @@ class RulesScreen extends StatelessWidget {
                     'Tap any previously locked cell and use "Clear Selected" to wipe it. Use "Clear Board" '
                     'to reset every cell on the grid back to empty (confirmation required).',
               ),
+              _RuleSection(
+                number: '8',
+                title: 'Capturing a Word',
+                body:
+                    'Tap "Capture" at any time to open a text box — type, speak, or glide-type the word you '
+                    'formed using your device\'s own keyboard, then tap "Save Word" (or just hit done/enter). '
+                    'Single letters count too. If that exact word was already captured earlier in this match, '
+                    'you\'ll see a "Word : 🥲" warning and it won\'t save again; a new word shows "Word : 🤠" to '
+                    'confirm it. Check the list icon in the top bar any time to see every word captured so far.',
+              ),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -100,7 +110,7 @@ class _RuleSection extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 14,
-            backgroundColor: const Color(0xFF5B4FE9),
+            backgroundColor: Theme.of(context).colorScheme.primary,
             child: Text(number, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
           ),
           const SizedBox(width: 12),
