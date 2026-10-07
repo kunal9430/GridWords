@@ -6,7 +6,7 @@
 /// `https://gridwords.en.uptodown.com/android`.
 class AppLinks {
   static const String downloadUrl =
-      'https://gridwords.en.uptodown.com/android'; // TODO: replace with your real Uptodown URL
+      'https://www.mediafire.com/folder/cja04q2zwpgns/Grid+Game'; // TODO: replace with your real Uptodown URL
 
   /// Kept for backwards compatibility with any old references.
   static const String playStoreUrl = downloadUrl;

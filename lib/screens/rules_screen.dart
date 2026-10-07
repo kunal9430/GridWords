@@ -78,14 +78,6 @@ class RulesScreen extends StatelessWidget {
                     'you\'ll see a "Word : 🥲" warning and it won\'t save again; a new word shows "Word : 🤠" to '
                     'confirm it. Check the list icon in the top bar any time to see every word captured so far.',
               ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Back to Home'),
-                ),
-              ),
             ],
           ),
         ),
