@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../ai/computer_turn.dart';
 import '../config/app_links.dart';
 import '../models/game_state.dart';
 import '../services/storage_service.dart';
+import '../services/word_list_service.dart';
 import '../widgets/alphabet_bank.dart';
 import '../widgets/numeric_strip.dart';
 import '../widgets/player_score_card.dart';
@@ -44,6 +46,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   // resuming a match that was already finished when it was saved.
   bool _gameOverDialogShown = false;
 
+  // Computer opponent: true while the move is being calculated, and a
+  // token bumped whenever a pending calculation must be discarded (board
+  // cleared, screen closed) so a stale result can never be applied.
+  bool _aiBusy = false;
+  int _aiToken = 0;
+
+  bool get _isComputersTurn => state.vsComputer && state.currentTurn == 2;
+
   // Wraps the visible game area (scoreboard + grid + bottom panel) so
   // "Share" can capture exactly what the player currently sees as an image.
   final GlobalKey _captureBoundaryKey = GlobalKey();
@@ -58,11 +68,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
     _gameOverDialogShown = state.isComplete;
     WidgetsBinding.instance.addObserver(this);
+    // Resuming a saved computer match that was left on the computer's turn.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRunComputerTurn());
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _aiToken++; // discard any in-flight computer move
     _bannerTimer?.cancel();
     _usedWordsScrollController.dispose();
     super.dispose();
@@ -86,6 +99,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------
 
   void _onCellTap(int r, int c) {
+    if (_isComputersTurn) return; // the board is the computer's this turn
     // Highlighting a cell is always allowed — even while the Numeric
     // Strip is armed — the Alphabet Bank itself stays disabled until the
     // pallet is closed, so no letter can actually be entered meanwhile.
@@ -150,12 +164,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _showTopBanner(String word, {required bool isWarning}) {
+    _showBannerMessage(isWarning ? 'Word : $word 🥲' : 'Word : $word 🤠', isWarning: isWarning);
+  }
+
+  void _showBannerMessage(String text, {required bool isWarning, Duration duration = const Duration(seconds: 2)}) {
     _bannerTimer?.cancel();
     setState(() {
-      _bannerText = isWarning ? 'Word : $word 🥲' : 'Word : $word 🤠';
+      _bannerText = text;
       _bannerIsWarning = isWarning;
     });
-    _bannerTimer = Timer(const Duration(seconds: 2), () {
+    _bannerTimer = Timer(duration, () {
       if (mounted) setState(() => _bannerText = null);
     });
   }
@@ -174,6 +192,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
       child: Text(
         _bannerText ?? '',
+        textAlign: TextAlign.center,
         style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: fg),
       ),
     );
@@ -293,6 +312,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   void _onLetterTap(String letter) {
+    if (_isComputersTurn) return;
     if (state.scoringArmed) return;
     if (selectedRow == null || selectedCol == null) return;
     final r = selectedRow!;
@@ -317,6 +337,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// already-active direction again toggles the pallet back off.
   void _setScoreDirection(int playerNumber, bool addMode) {
     if (state.currentTurn != playerNumber || state.isComplete) return;
+    if (state.vsComputer && playerNumber == 2) return; // never score for the computer by hand
     setState(() {
       if (state.scoringArmed && state.isAddMode == addMode) {
         state.scoringArmed = false; // second tap on the same button closes it
@@ -331,20 +352,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     if (!state.scoringArmed) return; // only active once armed
     setState(() {
       final delta = state.isAddMode ? number : -number;
-      if (state.currentTurn == 1) {
-        state.score1 += delta;
-      } else {
-        state.score2 += delta;
-      }
       // Clear the active highlight.
       selectedRow = null;
       selectedCol = null;
-      state.pendingRow = null;
-      state.pendingCol = null;
-      // Automatically switch the active turn and re-enable letter placement.
-      state.currentTurn = state.currentTurn == 1 ? 2 : 1;
-      state.scoringArmed = false;
-      state.isAddMode = true;
+      // Applies the score, clears the pending cell, and automatically
+      // switches the active turn / re-enables letter placement.
+      state.applyTurnScore(delta);
     });
     if (state.isComplete) {
       // Persist immediately, keyed by the same id, so a resumed match's
@@ -353,6 +366,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       StorageService.saveGame(state);
     }
     _maybeShowGameOverDialog();
+    _maybeRunComputerTurn();
   }
 
   /// Manually hands the active turn to [playerNumber] — e.g. to correct a
@@ -361,6 +375,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// pallet again rather than being blocked by it.
   void _switchTurn(int playerNumber) {
     if (state.isComplete) return;
+    if (state.vsComputer) return; // turns pass automatically against the computer
     if (state.currentTurn == playerNumber) return;
     setState(() {
       state.currentTurn = playerNumber;
@@ -370,10 +385,93 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------
+  // Computer opponent
+  // ---------------------------------------------------------------------
+
+  bool _sameBoard(List<List<String>> other) {
+    for (var r = 0; r < state.rows; r++) {
+      for (var c = 0; c < state.cols; c++) {
+        if (state.grid[r][c] != other[r][c]) return false;
+      }
+    }
+    return true;
+  }
+
+  /// Runs the computer's turn if (and only if) it is due: a computer match,
+  /// Player 2's turn, the board not full, and no calculation already in
+  /// flight. The search runs in a background isolate so the UI never
+  /// freezes; the result is applied only if the board/turn are still
+  /// exactly as they were when the calculation started.
+  Future<void> _maybeRunComputerTurn() async {
+    if (!mounted || _aiBusy || !state.isComputerTurn) return;
+    _aiBusy = true;
+    final token = ++_aiToken;
+    setState(() {});
+    var retry = false;
+    try {
+      final wordsText = await WordListService.loadText();
+      final definitions = await WordListService.loadDefinitions();
+      final gridSnapshot = [for (final row in state.grid) List<String>.from(row)];
+      final request = ComputerMoveRequest(
+        wordsText: wordsText,
+        grid: gridSnapshot,
+        usedWords: List<String>.from(state.usedWords),
+        difficultyName: state.difficulty,
+        seed: DateTime.now().microsecondsSinceEpoch & 0x7fffffff,
+      );
+      final started = DateTime.now();
+      final result = await computeComputerMoveInBackground(request);
+      // Even an instant answer waits a beat so the move feels like a turn.
+      final elapsed = DateTime.now().difference(started);
+      const minThink = Duration(milliseconds: 800);
+      if (elapsed < minThink) await Future<void>.delayed(minThink - elapsed);
+
+      if (!mounted || token != _aiToken || !state.isComputerTurn) return;
+      if (result == null) return;
+      if (!_sameBoard(gridSnapshot)) {
+        retry = true; // board changed while thinking: think again
+        return;
+      }
+      var applied = false;
+      setState(() {
+        selectedRow = null;
+        selectedCol = null;
+        applied = state.applyComputerMove(result);
+      });
+      if (applied) {
+        final meaning = result.word == null ? null : definitions[result.word!];
+        _showBannerMessage(
+          result.word == null
+              ? '🤖 placed ${result.letter} (no word)'
+              : '🤖 ${result.word} +${result.score}${meaning == null ? '' : '\n$meaning'}',
+          isWarning: result.word == null,
+          duration: const Duration(seconds: 5), // long enough to read the meaning
+        );
+        if (state.isComplete) StorageService.saveGame(state);
+        _maybeShowGameOverDialog();
+      }
+    } catch (_) {
+      if (mounted && token == _aiToken && state.isComputerTurn) {
+        setState(() => state.currentTurn = 1);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("The computer couldn't move - it's your turn.")),
+        );
+      }
+    } finally {
+      _aiBusy = false; // only one calculation is ever in flight
+      if (mounted) {
+        setState(() {});
+        if (retry) _maybeRunComputerTurn();
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // Clear actions
   // ---------------------------------------------------------------------
 
   void _clearSelected() {
+    if (_aiBusy || _isComputersTurn) return;
     if (selectedRow == null || selectedCol == null) return;
     final r = selectedRow!;
     final c = selectedCol!;
@@ -407,20 +505,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ),
     );
     if (confirmed == true) {
+      _aiToken++; // any computer move calculated for the old board is stale
       setState(() {
-        state.grid = List.generate(state.rows, (_) => List.generate(state.cols, (_) => ''));
-        state.locked = List.generate(state.rows, (_) => List.generate(state.cols, (_) => false));
-        state.score1 = 0;
-        state.score2 = 0;
+        state.resetMatch();
         selectedRow = null;
         selectedCol = null;
-        state.scoringArmed = false;
-        state.pendingRow = null;
-        state.pendingCol = null;
-        state.isAddMode = true;
-        state.usedWords.clear();
         _gameOverDialogShown = false;
       });
+      // If the computer opens this match, it plays its first move again.
+      _maybeRunComputerTurn();
     }
   }
 
@@ -525,6 +618,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     final isSelected = selectedRow == r && selectedCol == c;
     final isLocked = state.locked[r][c];
     final letter = state.grid[r][c];
+    final isAiNew = state.aiMoveRow == r && state.aiMoveCol == c;
+    var isAiWord = false;
+    for (var i = 0; i + 1 < state.aiWordCells.length; i += 2) {
+      if (state.aiWordCells[i] == r && state.aiWordCells[i + 1] == c) {
+        isAiWord = true;
+        break;
+      }
+    }
     final letterColor = isDark ? Colors.indigo.shade100 : Colors.indigo.shade700;
     final fontSize = (cellSize * 0.42).clamp(10.0, 34.0);
 
@@ -535,13 +636,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         height: cellSize - 3,
         margin: const EdgeInsets.all(1.5),
         decoration: BoxDecoration(
-          color: isLocked
-              ? (isDark ? Colors.indigo.shade900 : const Color(0xFFDDE4FF))
-              : (isDark ? const Color(0xFF1E1E28) : Colors.white),
+          color: isAiNew
+              ? Colors.teal.withOpacity(isDark ? 0.45 : 0.35)
+              : isLocked
+                  ? (isDark ? Colors.indigo.shade900 : const Color(0xFFDDE4FF))
+                  : (isDark ? const Color(0xFF1E1E28) : Colors.white),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: isSelected ? Colors.deepOrange : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
-            width: isSelected ? 2.5 : 1,
+            color: isSelected
+                ? Colors.deepOrange
+                : (isAiNew || isAiWord)
+                    ? Colors.teal
+                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+            width: isSelected ? 2.5 : (isAiNew ? 3 : (isAiWord ? 2 : 1)),
           ),
         ),
         child: Stack(
@@ -650,7 +757,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// is finished it's replaced by the winner summary instead.
   Widget _buildBottomPanel() {
     if (state.isComplete) return _buildGameOverPanel();
-    final bankEnabled = !state.scoringArmed &&
+    final bankEnabled = !_isComputersTurn &&
+        !state.scoringArmed &&
         selectedRow != null &&
         selectedCol != null &&
         !state.locked[selectedRow!][selectedCol!];
@@ -659,7 +767,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   Widget _buildScoreboard() {
     final p1ControlsEnabled = state.currentTurn == 1 && !state.isComplete;
-    final p2ControlsEnabled = state.currentTurn == 2 && !state.isComplete;
+    // The computer scores itself; its +/- buttons are never available.
+    final p2ControlsEnabled = state.currentTurn == 2 && !state.isComplete && !state.vsComputer;
     return Column(
       children: [
         Row(
@@ -673,7 +782,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               isCurrentTurn: state.currentTurn == 1,
               onAddPressed: () => _setScoreDirection(1, true),
               onMinusPressed: () => _setScoreDirection(1, false),
-              onCardTap: () => _switchTurn(1),
+              onCardTap: state.vsComputer ? null : () => _switchTurn(1),
               accentColor: Theme.of(context).colorScheme.primary,
             ),
             PlayerScoreCard(
@@ -685,7 +794,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               isCurrentTurn: state.currentTurn == 2,
               onAddPressed: () => _setScoreDirection(2, true),
               onMinusPressed: () => _setScoreDirection(2, false),
-              onCardTap: () => _switchTurn(2),
+              onCardTap: state.vsComputer ? null : () => _switchTurn(2),
               accentColor: Theme.of(context).colorScheme.tertiary,
             ),
           ],
@@ -751,12 +860,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       child: Row(
         children: [
           _ribbonButton(
-              icon: Icons.delete_sweep, label: 'Board', onPressed: state.isComplete ? null : _clearBoard, color: Colors.red),
+              icon: Icons.delete_sweep, label: 'Board', onPressed: (state.isComplete || _aiBusy) ? null : _clearBoard, color: Colors.red),
           const SizedBox(width: 6),
           _ribbonButton(
               icon: Icons.backspace_outlined,
               label: 'Cell',
-              onPressed: state.isComplete ? null : _clearSelected,
+              onPressed: (state.isComplete || _aiBusy) ? null : _clearSelected,
               color: Colors.orange.shade800),
           const SizedBox(width: 6),
           _ribbonButton(
@@ -765,7 +874,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           _ribbonButton(
               icon: Icons.text_fields,
               label: 'Capture',
-              onPressed: (state.isComplete || !state.locked.any((row) => row.any((cell) => cell))) ? null : _startCapture,
+              onPressed: (state.isComplete || _aiBusy || !state.locked.any((row) => row.any((cell) => cell)))
+                  ? null
+                  : _startCapture,
               color: Colors.teal),
         ],
       ),
@@ -787,7 +898,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Active Game'),
+          title: Text(state.vsComputer ? 'Vs Computer · ${state.aiDifficulty.label}' : 'Active Game'),
           actions: [
             IconButton(
               tooltip: 'Used words',
@@ -857,6 +968,39 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               // Floating "Word : ..." confirmation/warning banner, centered
               // just below the app bar. Purely visual — doesn't block taps
               // on anything underneath it.
+              if (_aiBusy)
+                Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade100,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.teal.shade700, width: 1.5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.teal.shade900),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Computer is thinking…',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.teal.shade900),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (_bannerText != null)
                 Positioned(
                   top: 8,

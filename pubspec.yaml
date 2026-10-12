@@ -27,6 +27,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/words/words.txt
 
 # Config consumed by `dart run flutter_launcher_icons` (invoked from
 # codemagic.yaml right after the Android project is generated) to set

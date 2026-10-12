@@ -137,6 +137,19 @@ class _SavedGamesScreenState extends State<SavedGamesScreen> {
                               Text('${game.player1Name} (${game.score1}) - (${game.score2}) ${game.player2Name}'),
                               const SizedBox(height: 4),
                               Text('${game.rows} x ${game.cols} Grid'),
+                              if (game.vsComputer) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.smart_toy, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Vs Computer · Level: ${game.aiDifficulty.label}',
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               const SizedBox(height: 4),
                               Text(
                                 'Last saved: ${_formatTimestamp(game.lastSaved)}',

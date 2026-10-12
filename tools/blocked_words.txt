@@ -1,0 +1,18 @@
+# Words that must never be accepted, one per line (lower-case). '#' starts a comment.
+# build_wordlist.py applies this list; add a word here and re-run it (or
+# delete the line from assets/words/words.txt) to ban it.
+
+# Acronyms / initialisms (or words that are really one)
+vat
+asp
+duff
+laser
+radar
+scuba
+sonar
+snafu
+
+# Abbreviations / clipped forms
+gent
+divvy
+varsity
