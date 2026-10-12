@@ -78,6 +78,19 @@ class RulesScreen extends StatelessWidget {
                     'you\'ll see a "Word : 🥲" warning and it won\'t save again; a new word shows "Word : 🤠" to '
                     'confirm it. Check the list icon in the top bar any time to see every word captured so far.',
               ),
+              _RuleSection(
+                number: '9',
+                title: 'Playing Against the Computer',
+                body:
+                    'Choose "Vs Computer" and a difficulty (Easy, Medium, Hard, Expert) on the setup screen. '
+                    'You are Player 1 and the computer is Player 2. Pick "Me" or "Computer" under "Who plays first?" on the setup screen. After you record your score, '
+                    'the computer places one letter, scores itself, and hands the turn back — highlighted in '
+                    'teal on the board. It plays by the same rules: words are runs of touching letters in a '
+                    'straight line (across, down or diagonally, read either way) that include its new letter, '
+                    'a word scores its length, and a word can only score once per match. If one letter forms '
+                    'several words it claims the longest. When nothing scores it still has to place a letter, '
+                    'for 0.',
+              ),
             ],
           ),
         ),

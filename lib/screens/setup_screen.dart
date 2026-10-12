@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';
+import '../ai/difficulty.dart';
 import '../models/game_state.dart';
 import '../services/profile_service.dart';
 import 'game_screen.dart';
@@ -23,6 +24,11 @@ class _SetupScreenState extends State<SetupScreen> {
   final TextEditingController _maxWordLengthController = TextEditingController();
 
   String? _crossDimensionError;
+
+  // "Play Against Computer": Player 2 becomes the computer.
+  bool _vsComputer = false;
+  AiDifficulty _difficulty = AiDifficulty.medium;
+  bool _computerStarts = false;
 
   @override
   void initState() {
@@ -102,12 +108,20 @@ class _SetupScreenState extends State<SetupScreen> {
       return;
     }
 
-    final gameState = GameState.newGame(
-      player1Name: _p1Controller.text.trim(),
-      player2Name: _p2Controller.text.trim(),
-      rows: rows,
-      cols: cols,
-    );
+    final gameState = _vsComputer
+        ? GameState.newComputerGame(
+            humanName: _p1Controller.text.trim(),
+            rows: rows,
+            cols: cols,
+            difficulty: _difficulty,
+            computerStarts: _computerStarts,
+          )
+        : GameState.newGame(
+            player1Name: _p1Controller.text.trim(),
+            player2Name: _p2Controller.text.trim(),
+            rows: rows,
+            cols: cols,
+          );
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => GameScreen(gameState: gameState)),
@@ -136,19 +150,60 @@ class _SetupScreenState extends State<SetupScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, icon: Icon(Icons.people), label: Text('2 Players')),
+                      ButtonSegment(value: true, icon: Icon(Icons.smart_toy), label: Text('Vs Computer')),
+                    ],
+                    selected: {_vsComputer},
+                    onSelectionChanged: (sel) => setState(() => _vsComputer = sel.first),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _p1Controller,
-                  decoration: const InputDecoration(labelText: 'Player 1 Name'),
+                  decoration: InputDecoration(labelText: _vsComputer ? 'Your Name' : 'Player 1 Name'),
                   maxLength: _maxNameLength,
                   validator: _validateName,
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _p2Controller,
-                  decoration: const InputDecoration(labelText: 'Player 2 Name'),
-                  maxLength: _maxNameLength,
-                  validator: _validateName,
-                ),
+                if (_vsComputer) ...[
+                  const Text('Computer difficulty', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final d in AiDifficulty.values)
+                        ChoiceChip(
+                          label: Text(d.label),
+                          selected: _difficulty == d,
+                          onSelected: (_) => setState(() => _difficulty = d),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Who plays first?', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: false, icon: Icon(Icons.person), label: Text('Me')),
+                        ButtonSegment(value: true, icon: Icon(Icons.smart_toy), label: Text('Computer')),
+                      ],
+                      selected: {_computerStarts},
+                      onSelectionChanged: (sel) => setState(() => _computerStarts = sel.first),
+                    ),
+                  ),
+                ] else
+                  TextFormField(
+                    controller: _p2Controller,
+                    decoration: const InputDecoration(labelText: 'Player 2 Name'),
+                    maxLength: _maxNameLength,
+                    validator: _validateName,
+                  ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _rowsController,
