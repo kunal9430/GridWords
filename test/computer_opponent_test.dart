@@ -8,6 +8,7 @@ import 'package:grid_word_game/ai/difficulty.dart';
 import 'package:grid_word_game/ai/move_generator.dart';
 import 'package:grid_word_game/ai/word_list.dart';
 import 'package:grid_word_game/models/game_state.dart';
+import 'package:grid_word_game/services/scoreboard_name_resolver.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,7 +61,7 @@ final WordList catWords = WordList.fromWords(const ['CAT', 'AT', 'TO']);
 
 GameState computerGame(List<String> rows, {AiDifficulty difficulty = AiDifficulty.medium}) {
   final s = GameState.newComputerGame(
-    humanName: 'Sam',
+    humanNames: ['Sam'],
     rows: rows.length,
     cols: rows.first.length,
     difficulty: difficulty,
@@ -379,6 +380,54 @@ void main() {
       }
     });
 
+    test('only the 1st verb form: no 2nd / 3rd / 4th forms (past, participle, -ing)', () {
+      const forms = [
+        // V2 / V3, regular
+        'walked', 'looked', 'stopped', 'carried', 'baked', 'tired', 'finished', 'unused',
+        // V2 / V3, irregular
+        'ran', 'went', 'gone', 'built', 'made', 'broken', 'eaten', 'ate', 'took', 'taken',
+        'gave', 'given', 'saw', 'seen', 'was', 'were', 'been', 'had', 'did', 'done', 'got',
+        // V4 (-ing)
+        'walking', 'running', 'making', 'building', 'going', 'being', 'having', 'doing',
+        'dying', 'lying', 'feeling', 'stopping',
+        // V5 (-s) of irregular verbs
+        'is', 'are', 'has',
+      ];
+      // 'saw' is also an ordinary noun (the tool) and is deliberately kept.
+      final offenders = forms.where((w) => w != 'saw' && words.contains(w)).toList();
+      expect(offenders, isEmpty, reason: '${offenders.join(' ')} are not the 1st verb form');
+    });
+
+    test('1st verb forms are still accepted', () {
+      for (final w in ['walk', 'look', 'stop', 'carry', 'bake', 'tire', 'finish', 'use', 'run', 'go', 'build',
+        'make', 'break', 'eat', 'take', 'give', 'see', 'be', 'have', 'do', 'get', 'read', 'put', 'cut', 'set']) {
+        expect(words.contains(w), isTrue, reason: '$w should be accepted');
+      }
+    });
+
+    test('no regular -ed / -ing form of another listed word', () {
+      String? stemOf(String w) {
+        if (w.length >= 5 && w.endsWith('ing')) {
+          final b = w.substring(0, w.length - 3);
+          for (final s in [b, '${b}e', if (b.length > 1 && b[b.length - 1] == b[b.length - 2]) b.substring(0, b.length - 1)]) {
+            if (s.length >= 2 && words.contains(s)) return s;
+          }
+        }
+        if (w.length >= 4 && w.endsWith('ed')) {
+          final b = w.substring(0, w.length - 2);
+          for (final s in [b, w.substring(0, w.length - 1), if (b.length > 1 && b[b.length - 1] == b[b.length - 2]) b.substring(0, b.length - 1)]) {
+            if (s.length >= 3 && words.contains(s)) return s;
+          }
+        }
+        return null;
+      }
+
+      // Ordinary nouns / adjectives that merely look inflected are kept on purpose
+      // (see KEEP in tools/verb_forms.py), so a small tolerance is expected.
+      final leftovers = words.where((w) => stemOf(w) != null).toList();
+      expect(leftovers.length, lessThan(120), reason: leftovers.join(' '));
+    });
+
     test('ordinary words are accepted', () {
       for (final w in ['zap', 'busy', 'memo', 'ion', 'cat', 'tub', 'sub', 'lot', 'our', 'it', 'of', 'the']) {
         expect(words.contains(w), isTrue, reason: '$w should be accepted');
@@ -517,14 +566,14 @@ void main() {
       s.scoringArmed = true;
       expect(s.isComputerTurn, isFalse);
 
-      final humans = GameState.newGame(player1Name: 'A', player2Name: 'B', rows: 2, cols: 2);
+      final humans = GameState.newGame(playerNames: ['A', 'B'], rows: 2, cols: 2);
       humans.currentTurn = 2;
       expect(humans.vsComputer, isFalse);
       expect(humans.isComputerTurn, isFalse);
     });
 
     test('two-human scoring is unchanged: score, then the turn passes', () {
-      final s = GameState.newGame(player1Name: 'Ann', player2Name: 'Bob', rows: 3, cols: 3);
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob'], rows: 3, cols: 3);
       s.scoringArmed = true;
       s.pendingRow = 0;
       s.pendingCol = 0;
@@ -561,7 +610,7 @@ void main() {
     });
 
     test('resetMatch leaves whose turn it is alone in a two-human match (original behaviour)', () {
-      final s = GameState.newGame(player1Name: 'Ann', player2Name: 'Bob', rows: 2, cols: 2);
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob'], rows: 2, cols: 2);
       s.currentTurn = 2;
       s.score2 = 5;
       s.resetMatch();
@@ -571,7 +620,7 @@ void main() {
 
     test('the computer can play the opening move, and keeps doing so after a restart', () {
       final s = GameState.newComputerGame(
-        humanName: 'Sam',
+        humanNames: ['Sam'],
         rows: 3,
         cols: 3,
         difficulty: AiDifficulty.hard,
@@ -585,7 +634,7 @@ void main() {
       expect(s.currentTurn, 2);
       expect(GameState.decode(s.encode()).computerStarts, isTrue);
 
-      final human = GameState.newComputerGame(humanName: 'Sam', rows: 3, cols: 3, difficulty: AiDifficulty.easy);
+      final human = GameState.newComputerGame(humanNames: ['Sam'], rows: 3, cols: 3, difficulty: AiDifficulty.easy);
       expect(human.currentTurn, 1);
       expect(human.computerStarts, isFalse);
     });
@@ -628,6 +677,114 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
+  group('"Word already used" challenge and final-word check', () {
+    test('undoing the computer move removes its letter and points and keeps the word used', () {
+      final s = computerGame(['CA.', '..O']);
+      s.currentTurn = 2;
+      final move = pickMove(s.grid, catWords, 0, 2, 'T');
+      expect(s.applyComputerMove(asResult(move)), isTrue);
+      expect(s.score2, 3);
+      expect(s.canChallengeComputerMove, isTrue);
+
+      expect(s.undoLastComputerMove(), isTrue);
+      expect(s.grid[0][2], '');
+      expect(s.locked[0][2], isFalse);
+      expect(s.score2, 0);
+      expect(s.usedWords, ['CAT'], reason: 'the challenged word stays on the used list');
+      expect(s.currentTurn, 2, reason: 'the computer tries again');
+      expect(s.isComputerTurn, isTrue);
+      expect(s.aiWord, isNull);
+      expect(s.canChallengeComputerMove, isFalse, reason: 'nothing left to challenge');
+      expect(s.undoLastComputerMove(), isFalse);
+    });
+
+    test('the retry can never claim the challenged word again', () {
+      final s = computerGame(['CA.', '..O']);
+      s.currentTurn = 2;
+      expect(s.applyComputerMove(asResult(pickMove(s.grid, catWords, 0, 2, 'T'))), isTrue);
+      expect(s.undoLastComputerMove(), isTrue);
+      final retry = ComputerPlayer(catWords).chooseMove(
+        grid: s.grid,
+        usedWords: s.usedWords,
+        difficulty: AiDifficulty.hard,
+        timeBudget: const Duration(seconds: 2),
+      );
+      expect(retry?.claim?.word, isNot('CAT'));
+    });
+
+    test('cannot challenge a zero-point move, on the computer turn, or in a two-human match', () {
+      final s = computerGame(['..', '..']);
+      s.currentTurn = 2;
+      s.applyComputerMove(const ComputerMoveResult(row: 0, col: 0, letter: 'Q', word: null, wordCells: []));
+      expect(s.canChallengeComputerMove, isFalse, reason: 'no word was claimed');
+      expect(s.undoLastComputerMove(), isFalse);
+
+      final humans = GameState.newGame(playerNames: ['A', 'B'], rows: 2, cols: 2);
+      expect(humans.canChallengeComputerMove, isFalse);
+      expect(humans.undoLastComputerMove(), isFalse);
+    });
+
+    test('cannot challenge once the human has started their own turn', () {
+      final s = computerGame(['CA.', '..O']);
+      s.currentTurn = 2;
+      s.applyComputerMove(asResult(pickMove(s.grid, catWords, 0, 2, 'T')));
+      expect(s.canChallengeComputerMove, isTrue);
+      s.scoringArmed = true; // human placed a letter, score pending
+      expect(s.canChallengeComputerMove, isFalse);
+      expect(s.undoLastComputerMove(), isFalse);
+      s.scoringArmed = false;
+      s.applyTurnScore(1); // human scored: computer highlight is cleared
+      expect(s.canChallengeComputerMove, isFalse);
+    });
+
+    test('the challenge survives save and load', () {
+      final s = computerGame(['CA.', '..O']);
+      s.currentTurn = 2;
+      s.applyComputerMove(asResult(pickMove(s.grid, catWords, 0, 2, 'T')));
+      final loaded = GameState.decode(s.encode());
+      expect(loaded.canChallengeComputerMove, isTrue);
+      expect(loaded.undoLastComputerMove(), isTrue);
+      expect(loaded.score2, 0);
+    });
+
+    test('a move that fills the last cell with a word needs the final-word check', () {
+      final s = computerGame(['CA.']);
+      s.currentTurn = 2;
+      expect(s.vacantCount, 1);
+      final move = pickMove(s.grid, catWords, 0, 2, 'T');
+      expect(s.endsGameWithWord(asResult(move)), isTrue);
+    });
+
+    test('no final-word check when cells remain, or when the last move claims no word', () {
+      final s = computerGame(['CA..']);
+      s.currentTurn = 2;
+      expect(s.vacantCount, 2);
+      final cat = ComputerMoveResult(row: 0, col: 2, letter: 'T', word: 'CAT', wordCells: const [0, 0, 0, 1, 0, 2]);
+      expect(s.endsGameWithWord(cat), isFalse);
+
+      final last = computerGame(['CAB.']);
+      last.currentTurn = 2;
+      const filler = ComputerMoveResult(row: 0, col: 3, letter: 'Q', word: null, wordCells: []);
+      expect(last.endsGameWithWord(filler), isFalse);
+    });
+
+    test('a word the human says is used is added once and then excluded from the final move', () {
+      final s = computerGame(['CA.']);
+      s.currentTurn = 2;
+      s.addUsedWord('cat'); // human: "CAT was already used"
+      s.addUsedWord('CAT');
+      expect(s.usedWords, ['CAT']);
+      final next = ComputerPlayer(WordList.fromWords(const ['CAT'])).chooseMove(
+        grid: s.grid,
+        usedWords: s.usedWords,
+        difficulty: AiDifficulty.expert,
+        timeBudget: const Duration(seconds: 2),
+      )!;
+      expect(next.claim, isNull, reason: 'only CAT fits and it is used, so it places a filler letter');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   group('Isolate entry point', () {
     test('computeComputerMove returns plain data describing a legal move', () {
       const text = 'CAT\n';
@@ -652,6 +809,116 @@ void main() {
         seed: 1,
       ));
       expect(r, isNull);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  group('Up to four players', () {
+    test('pass and play rotates through every seat and wraps around', () {
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy', 'Di'], rows: 3, cols: 3);
+      expect(s.playerCount, 4);
+      final seen = <int>[];
+      for (var i = 0; i < 5; i++) {
+        seen.add(s.currentTurn);
+        s.applyTurnScore(i + 1);
+      }
+      expect(seen, [1, 2, 3, 4, 1]);
+      expect(s.scores, [1 + 5, 2, 3, 4]);
+    });
+
+    test('computer sits in the last seat and moves after every human', () {
+      final s = GameState.newComputerGame(
+        humanNames: ['Ann', 'Bob', 'Cy'],
+        rows: 3,
+        cols: 3,
+        difficulty: AiDifficulty.easy,
+      );
+      expect(s.playerCount, 4);
+      expect(s.computerSeat, 4);
+      expect(s.playerInitials.last, '🤖 CPU');
+      expect(s.isComputerTurn, isFalse);
+      s.applyTurnScore(1);
+      s.applyTurnScore(1);
+      expect(s.currentTurn, 3);
+      expect(s.isComputerTurn, isFalse);
+      s.applyTurnScore(1);
+      expect(s.currentTurn, 4);
+      expect(s.isComputerTurn, isTrue);
+    });
+
+    test('a computer opening move starts from the computer seat', () {
+      final s = GameState.newComputerGame(
+        humanNames: ['Ann', 'Bob'],
+        rows: 2,
+        cols: 2,
+        difficulty: AiDifficulty.easy,
+        computerStarts: true,
+      );
+      expect(s.currentTurn, 3);
+      s.resetMatch();
+      expect(s.currentTurn, 3);
+    });
+
+    test('computer move scores only the computer and hands over to player 1', () {
+      final s = GameState.newComputerGame(
+        humanNames: ['Ann', 'Bob'],
+        rows: 2,
+        cols: 3,
+        difficulty: AiDifficulty.easy,
+      );
+      s.grid = grid(['CA.', '..O']);
+      s.locked = [
+        [true, true, false],
+        [false, false, true],
+      ];
+      s.currentTurn = 3;
+      expect(s.applyComputerMove(asResult(pickMove(s.grid, catWords, 0, 2, 'T'))), isTrue);
+      expect(s.scores, [0, 0, 3]);
+      expect(s.currentTurn, 1);
+      expect(s.canChallengeComputerMove, isTrue);
+      expect(s.undoLastComputerMove(), isTrue);
+      expect(s.scores, [0, 0, 0]);
+      expect(s.currentTurn, 3);
+    });
+
+    test('leaders reports ties', () {
+      final s = GameState.newGame(playerNames: ['A', 'B', 'C'], rows: 2, cols: 2);
+      s.scores = [3, 5, 5];
+      expect(s.leaders, [2, 3]);
+      s.scores = [3, 5, 4];
+      expect(s.leaders, [2]);
+    });
+
+    test('3-4 player saves round-trip and old two-player saves still load', () {
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy', 'Di'], rows: 3, cols: 3)
+        ..scores = [1, 2, 3, 4]
+        ..currentTurn = 3;
+      final loaded = GameState.decode(s.encode());
+      expect(loaded.playerNames, ['Ann', 'Bob', 'Cy', 'Di']);
+      expect(loaded.scores, [1, 2, 3, 4]);
+      expect(loaded.currentTurn, 3);
+
+      final legacy = s.toJson()
+        ..remove('playerNames')
+        ..remove('playerInitials')
+        ..remove('scores');
+      final old = GameState.fromJson(legacy);
+      expect(old.playerCount, 2);
+      expect(old.playerNames, ['Ann', 'Bob']);
+      expect(old.scores, [1, 2]);
+    });
+
+    test('labels are unique for up to four players', () {
+      for (final names in [
+        ['Kunal Kumar', 'Kunal Kapoor', 'Kara Knight', 'Kunal Kumar'],
+        ['Sam', 'Sam', 'Sam', 'Sam'],
+        ['Alex', 'Alan', 'Zed', 'Alex'],
+        ['😎', '😎', '🚀'],
+      ]) {
+        final labels = ScoreboardNameResolver.resolveMany(names);
+        expect(labels.length, names.length);
+        expect(labels.toSet().length, labels.length, reason: '$names -> $labels');
+      }
     });
   });
 }

@@ -3,11 +3,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/backup_service.dart';
+import '../widgets/gw_kit.dart';
 import 'home_screen.dart';
 
 /// A short branded opening screen shown once at launch. Pure Flutter,
-/// no extra packages: a fade + scale entrance for the app mark, then an
-/// automatic hand-off to the Home screen.
+/// no extra packages: the same lettered GRID / WORDS tiles as the Home
+/// screen pop in one after another on the Home gradient, then an automatic
+/// hand-off to the Home screen (so the logo seems to simply carry over).
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -19,15 +21,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   static const String _backupPromptShownKey = 'backup_first_run_prompt_shown';
 
   late final AnimationController _controller;
-  late final Animation<double> _scale;
   late final Animation<double> _fade;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
-    _scale = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
-    _fade = CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.6, curve: Curves.easeIn));
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
+    _fade = CurvedAnimation(parent: _controller, curve: const Interval(0.55, 1.0, curve: Curves.easeIn));
     _controller.forward();
     _navigateAfterDelay();
   }
@@ -113,60 +113,48 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = Theme.of(context).colorScheme.primary;
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF101018) : primary,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Center(
-              child: FadeTransition(
-                opacity: _fade,
-                child: ScaleTransition(
-                  scale: _scale,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 8)),
-                          ],
-                        ),
-                        child: Icon(Icons.grid_on, size: 56, color: primary),
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Grid Words',
+      body: GWBackground(
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GWWordTiles(word: 'GRID', color: scheme.primary, size: 52, controller: _controller),
+                    const SizedBox(height: 8),
+                    GWWordTiles(word: 'WORDS', color: scheme.tertiary, size: 52, controller: _controller, startIndex: 4),
+                    const SizedBox(height: 22),
+                    FadeTransition(
+                      opacity: _fade,
+                      child: Text(
+                        'Build words. Claim points. Beat your rival.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold, height: 1.2),
+                        style: TextStyle(fontSize: 13, color: scheme.onSurface.withOpacity(0.6)),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+              // Developer credit, pinned to the bottom of the splash screen
+              // rather than sitting directly under the title.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 24,
+                child: FadeTransition(
+                  opacity: _fade,
+                  child: Text(
+                    'by Kunal Kumar 😎',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: scheme.onSurface.withOpacity(0.5), fontSize: 12),
                   ),
                 ),
               ),
-            ),
-            // Developer credit, pinned to the bottom of the splash screen
-            // rather than sitting directly under the title.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 24,
-              child: FadeTransition(
-                opacity: _fade,
-                child: Text(
-                  'by Kunal Kumar 😎',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

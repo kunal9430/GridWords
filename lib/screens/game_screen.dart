@@ -12,6 +12,7 @@ import '../models/game_state.dart';
 import '../services/storage_service.dart';
 import '../services/word_list_service.dart';
 import '../widgets/alphabet_bank.dart';
+import '../widgets/gw_kit.dart';
 import '../widgets/numeric_strip.dart';
 import '../widgets/player_score_card.dart';
 import 'setup_screen.dart';
@@ -52,7 +53,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _aiBusy = false;
   int _aiToken = 0;
 
-  bool get _isComputersTurn => state.vsComputer && state.currentTurn == 2;
+  bool get _isComputersTurn => state.isComputerSeat(state.currentTurn);
 
   // Wraps the visible game area (scoreboard + grid + bottom panel) so
   // "Share" can capture exactly what the player currently sees as an image.
@@ -179,21 +180,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildTopBanner() {
-    final bg = _bannerIsWarning ? Colors.amber.shade200 : Colors.green.shade200;
-    final border = _bannerIsWarning ? Colors.amber.shade700 : Colors.green.shade700;
-    final fg = _bannerIsWarning ? Colors.amber.shade900 : Colors.green.shade900;
+    final scheme = Theme.of(context).colorScheme;
+    final accent = _bannerIsWarning ? Colors.amber.shade800 : Colors.green.shade600;
     return Container(
+      constraints: const BoxConstraints(maxWidth: 420),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: border, width: 1.5),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 6, offset: const Offset(0, 2))],
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent, width: 1.6),
+        boxShadow: [BoxShadow(color: accent.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 4))],
       ),
       child: Text(
         _bannerText ?? '',
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: fg),
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurface),
       ),
     );
   }
@@ -224,11 +226,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                         child: Text('No words captured yet.'),
                       )
                     else ...[
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(bottom: 8),
                         child: Text(
                           'Long-press and drag a word onto the bin below to remove it.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          style: TextStyle(fontSize: 12, color: Theme.of(dialogCtx).colorScheme.onSurface.withOpacity(0.6)),
                         ),
                       ),
                       ConstrainedBox(
@@ -252,7 +254,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                     color: Colors.transparent,
                                     child: Chip(
                                       label: Text(w),
-                                      backgroundColor: Colors.red.shade100,
+                                      backgroundColor: Colors.red.shade200,
+                                      labelStyle: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700),
                                     ),
                                   ),
                                   childWhenDragging: Opacity(
@@ -276,21 +279,21 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             decoration: BoxDecoration(
-                              color: isHovering ? Colors.red.shade100 : Colors.grey.shade200,
+                              color: isHovering ? Colors.red.withOpacity(0.14) : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.06),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: isHovering ? Colors.red : Colors.grey.shade400,
+                                color: isHovering ? Colors.red : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.25),
                                 width: isHovering ? 2 : 1,
                               ),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.delete_outline, color: isHovering ? Colors.red : Colors.grey.shade600),
+                                Icon(Icons.delete_outline, color: isHovering ? Colors.red : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6)),
                                 const SizedBox(width: 6),
                                 Text(
                                   isHovering ? 'Release to delete' : 'Drop here to delete',
-                                  style: TextStyle(color: isHovering ? Colors.red : Colors.grey.shade600),
+                                  style: TextStyle(color: isHovering ? Colors.red : Theme.of(ctx).colorScheme.onSurface.withOpacity(0.6)),
                                 ),
                               ],
                             ),
@@ -337,7 +340,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// already-active direction again toggles the pallet back off.
   void _setScoreDirection(int playerNumber, bool addMode) {
     if (state.currentTurn != playerNumber || state.isComplete) return;
-    if (state.vsComputer && playerNumber == 2) return; // never score for the computer by hand
+    if (state.isComputerSeat(playerNumber)) return; // never score for the computer by hand
     setState(() {
       if (state.scoringArmed && state.isAddMode == addMode) {
         state.scoringArmed = false; // second tap on the same button closes it
@@ -375,7 +378,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// pallet again rather than being blocked by it.
   void _switchTurn(int playerNumber) {
     if (state.isComplete) return;
-    if (state.vsComputer) return; // turns pass automatically against the computer
+    // The computer's seat is never handed over by hand, and its turn can't
+    // be interrupted.
+    if (state.isComputerSeat(playerNumber) || state.isComputerSeat(state.currentTurn)) return;
     if (state.currentTurn == playerNumber) return;
     setState(() {
       state.currentTurn = playerNumber;
@@ -432,6 +437,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         retry = true; // board changed while thinking: think again
         return;
       }
+      // The computer is about to end the game with a word: ask first
+      // whether that word was already used, and try again if it was.
+      if (state.endsGameWithWord(result)) {
+        final alreadyUsed = await _confirmFinalWord(result.word!, result.score);
+        if (!mounted || token != _aiToken || !state.isComputerTurn) return;
+        if (alreadyUsed) {
+          setState(() => state.addUsedWord(result.word!));
+          _showBannerMessage('📝 ${result.word} added to used words.\n🤖 Trying another move…',
+              isWarning: true);
+          retry = true;
+          return;
+        }
+      }
       var applied = false;
       setState(() {
         selectedRow = null;
@@ -464,6 +482,66 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         if (retry) _maybeRunComputerTurn();
       }
     }
+  }
+
+  /// Asked before the computer's game-ending move. Returns true when the
+  /// human says the word was already used (the computer must then retry).
+  Future<bool> _confirmFinalWord(String word, int score) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('🤖 Last move!'),
+        content: Text(
+          'The computer can finish the game with "$word" (+$score).\n\n'
+          'Has this word already been used?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, already used'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No, play it'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  /// "Word already used": the human tells the computer that the word it
+  /// just made was one they had already played. The computer's move is
+  /// taken back, the word joins the used-words list, and it tries again.
+  Future<void> _challengeComputerMove() async {
+    if (_aiBusy || !state.canChallengeComputerMove) return;
+    final word = state.aiWord!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Word already used?'),
+        content: Text(
+          'Was "$word" already used by you?\n\n'
+          'The computer will take its move back, "$word" will be added to the '
+          'used words, and the computer will try again.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes, undo it')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !state.canChallengeComputerMove) return;
+    var undone = false;
+    setState(() {
+      selectedRow = null;
+      selectedCol = null;
+      undone = state.undoLastComputerMove();
+    });
+    if (!undone) return;
+    _showBannerMessage('📝 $word added to used words.\n🤖 Trying another move…', isWarning: true);
+    _maybeRunComputerTurn();
   }
 
   // ---------------------------------------------------------------------
@@ -530,29 +608,68 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------
 
   String _winnerLabel() {
-    if (state.score1 == state.score2) return "It's a tie!";
-    return state.score1 > state.score2
-        ? '${state.player1Initials} wins!'
-        : '${state.player2Initials} wins!';
+    final leaders = state.leaders;
+    if (leaders.length == state.playerCount) return "It's a tie!";
+    if (leaders.length == 1) return '${state.playerInitials[leaders.first - 1]} wins!';
+    return '${leaders.map((i) => state.playerInitials[i - 1]).join(' & ')} tie for the win!';
+  }
+
+  /// One "INITIALS  score" pill per player, in the player's own color.
+  List<Widget> _finalScoreChips() => [
+        for (var i = 0; i < state.playerCount; i++)
+          _finalScoreChip(state.playerInitials[i], state.scores[i], GW.playerColor(context, i)),
+      ];
+
+  /// "INITIALS  score" pill used in the game-over dialog and panel.
+  Widget _finalScoreChip(String initials, int score, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Text(
+        '$initials  $score',
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+          fontFamilyFallback: ['Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji'],
+        ),
+      ),
+    );
   }
 
   Future<void> _maybeShowGameOverDialog() async {
     if (!state.isComplete || _gameOverDialogShown) return;
     _gameOverDialogShown = true;
     if (!mounted) return;
+    final scheme = Theme.of(context).colorScheme;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('🎉 Game Over!'),
+        title: const Text('🎉 Game Over!', textAlign: TextAlign.center),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(_winnerLabel(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Text('${state.player1Initials}: ${state.score1}   •   ${state.player2Initials}: ${state.score2}'),
+            const Text('🏆', style: TextStyle(fontSize: 44)),
+            const SizedBox(height: 6),
+            Text(
+              _winnerLabel(),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.primary),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: _finalScoreChips(),
+            ),
           ],
         ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Back')),
           ElevatedButton(
@@ -571,7 +688,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   String _shareText() =>
       '🎮 Grid Words result:\n'
-      '${state.player1Initials}: ${state.score1}  vs  ${state.player2Initials}: ${state.score2}\n'
+      '${[for (var i = 0; i < state.playerCount; i++) '${state.playerInitials[i]}: ${state.scores[i]}'].join('  vs  ')}\n'
       '${_winnerLabel()}\n\n'
       'Play Grid Words yourself: ${AppLinks.downloadUrl}';
 
@@ -615,6 +732,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------
 
   Widget _buildCell(int r, int c, double cellSize, bool isDark) {
+    final scheme = Theme.of(context).colorScheme;
     final isSelected = selectedRow == r && selectedCol == c;
     final isLocked = state.locked[r][c];
     final letter = state.grid[r][c];
@@ -626,44 +744,64 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         break;
       }
     }
-    final letterColor = isDark ? Colors.indigo.shade100 : Colors.indigo.shade700;
+    final accent = scheme.primary;
+    final aiColor = state.vsComputer ? GW.playerColor(context, state.computerSeat - 1) : scheme.tertiary;
+    final letterColor = isDark ? Color.lerp(accent, Colors.white, 0.7)! : GW.deepen(accent);
     final fontSize = (cellSize * 0.42).clamp(10.0, 34.0);
+    final radius = (cellSize * 0.2).clamp(4.0, 10.0);
+
+    final Color fill = isAiNew
+        ? aiColor.withOpacity(isDark ? 0.5 : 0.4)
+        : isAiWord
+            ? Color.alphaBlend(aiColor.withOpacity(isDark ? 0.25 : 0.16), scheme.surface)
+            : isLocked
+                ? Color.alphaBlend(accent.withOpacity(isDark ? 0.3 : 0.14), scheme.surface)
+                : scheme.surface;
+    final Color border = isSelected
+        ? Colors.deepOrange
+        : (isAiNew || isAiWord)
+            ? aiColor
+            : isLocked
+                ? accent.withOpacity(0.55)
+                : scheme.onSurface.withOpacity(isDark ? 0.18 : 0.14);
 
     return GestureDetector(
       onTap: () => _onCellTap(r, c),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
         width: cellSize - 3,
         height: cellSize - 3,
         margin: const EdgeInsets.all(1.5),
         decoration: BoxDecoration(
-          color: isAiNew
-              ? Colors.teal.withOpacity(isDark ? 0.45 : 0.35)
-              : isLocked
-                  ? (isDark ? Colors.indigo.shade900 : const Color(0xFFDDE4FF))
-                  : (isDark ? const Color(0xFF1E1E28) : Colors.white),
-          borderRadius: BorderRadius.circular(6),
+          color: fill,
+          borderRadius: BorderRadius.circular(radius),
           border: Border.all(
-            color: isSelected
-                ? Colors.deepOrange
-                : (isAiNew || isAiWord)
-                    ? Colors.teal
-                    : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
+            color: border,
             width: isSelected ? 2.5 : (isAiNew ? 3 : (isAiWord ? 2 : 1)),
           ),
+          boxShadow: isSelected
+              ? [BoxShadow(color: Colors.deepOrange.withOpacity(0.45), blurRadius: 8, spreadRadius: 0.5)]
+              : const [],
         ),
         child: Stack(
           children: [
             Center(
-              child: Text(
-                letter,
-                // This size is already computed from the cell's own pixel
-                // size just above, so it must stay exact — the app-wide
-                // Settings font-size slider (applied globally as a
-                // MediaQuery textScaler in main.dart) is deliberately
-                // opted out of here, or a large slider value would make
-                // letters overflow their fixed-size grid cell.
-                textScaler: TextScaler.noScaling,
-                style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold, color: letterColor),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+                child: Text(
+                  letter,
+                  key: ValueKey<String>(letter),
+                  // This size is already computed from the cell's own pixel
+                  // size just above, so it must stay exact — the app-wide
+                  // Settings font-size slider (applied globally as a
+                  // MediaQuery textScaler in main.dart) is deliberately
+                  // opted out of here, or a large slider value would make
+                  // letters overflow their fixed-size grid cell.
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800, color: letterColor),
+                ),
               ),
             ),
             // Lock icon gives locked cells a non-color-dependent
@@ -681,27 +819,38 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   /// Computes an exact cell size that guarantees the whole R x C grid fits
-  /// within the space [constraints] gives it — no scrolling, ever.
+  /// within the space [constraints] gives it — no scrolling, ever. The grid
+  /// sits on a rounded "board" panel, whose padding is subtracted first.
   Widget _buildGrid(BoxConstraints constraints) {
+    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final double rawCell = (constraints.maxWidth / state.cols) < (constraints.maxHeight / state.rows)
-        ? constraints.maxWidth / state.cols
-        : constraints.maxHeight / state.rows;
+    const double pad = 8;
+    final double availW = constraints.maxWidth - pad * 2;
+    final double availH = constraints.maxHeight - pad * 2;
+    final double rawCell = (availW / state.cols) < (availH / state.rows) ? availW / state.cols : availH / state.rows;
     // Tiny safety margin (0.96x) against rounding, capped so cells never
     // look comically oversized on tablets/landscape.
     final double cellSize = (rawCell * 0.96).clamp(10.0, 72.0);
 
     return Center(
-      child: SizedBox(
-        width: cellSize * state.cols,
-        height: cellSize * state.rows,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(
-            state.rows,
-            (r) => Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(state.cols, (c) => _buildCell(r, c, cellSize, isDark)),
+      child: Container(
+        padding: const EdgeInsets.all(pad),
+        decoration: BoxDecoration(
+          color: scheme.onSurface.withOpacity(isDark ? 0.05 : 0.035),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: scheme.onSurface.withOpacity(isDark ? 0.1 : 0.06)),
+        ),
+        child: SizedBox(
+          width: cellSize * state.cols,
+          height: cellSize * state.rows,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(
+              state.rows,
+              (r) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(state.cols, (c) => _buildCell(r, c, cellSize, isDark)),
+              ),
             ),
           ),
         ),
@@ -710,21 +859,46 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildGameOverPanel() {
+    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    const gold = Color(0xFFE0B23B);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2510) : const Color(0xFFFFF8E1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE0B23B)),
+        gradient: LinearGradient(
+          colors: [gold.withOpacity(isDark ? 0.22 : 0.28), scheme.surface],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gold.withOpacity(0.8), width: 1.5),
+        boxShadow: [BoxShadow(color: gold.withOpacity(0.25), blurRadius: 14, offset: const Offset(0, 4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('🏆', style: TextStyle(fontSize: 24)),
-          const SizedBox(height: 2),
-          Text(_winnerLabel(), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('🏆', style: TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  _winnerLabel(),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: _finalScoreChips(),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -734,7 +908,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   label: const Text('Share', style: TextStyle(fontSize: 12)),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () => Navigator.of(context).pushReplacement(
@@ -765,38 +939,32 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return AlphabetBank(onLetterTap: _onLetterTap, enabled: bankEnabled);
   }
 
-  Widget _buildScoreboard() {
-    final p1ControlsEnabled = state.currentTurn == 1 && !state.isComplete;
+  Widget _buildPlayerCard(int seat, {required bool compact}) {
+    final isTurn = state.currentTurn == seat;
     // The computer scores itself; its +/- buttons are never available.
-    final p2ControlsEnabled = state.currentTurn == 2 && !state.isComplete && !state.vsComputer;
+    final controlsEnabled = isTurn && !state.isComplete && !state.isComputerSeat(seat);
+    return PlayerScoreCard(
+      initials: state.playerInitials[seat - 1],
+      score: state.scores[seat - 1],
+      isAddActive: controlsEnabled && state.isAddMode,
+      isMinusActive: controlsEnabled && !state.isAddMode,
+      controlsEnabled: controlsEnabled,
+      isCurrentTurn: isTurn,
+      onAddPressed: () => _setScoreDirection(seat, true),
+      onMinusPressed: () => _setScoreDirection(seat, false),
+      onCardTap: state.isComputerSeat(seat) ? null : () => _switchTurn(seat),
+      accentColor: GW.playerColor(context, seat - 1),
+      compact: compact,
+    );
+  }
+
+  Widget _buildScoreboard() {
+    final compact = state.playerCount >= 3;
     return Column(
       children: [
         Row(
           children: [
-            PlayerScoreCard(
-              initials: state.player1Initials,
-              score: state.score1,
-              isAddActive: p1ControlsEnabled && state.isAddMode,
-              isMinusActive: p1ControlsEnabled && !state.isAddMode,
-              controlsEnabled: p1ControlsEnabled,
-              isCurrentTurn: state.currentTurn == 1,
-              onAddPressed: () => _setScoreDirection(1, true),
-              onMinusPressed: () => _setScoreDirection(1, false),
-              onCardTap: state.vsComputer ? null : () => _switchTurn(1),
-              accentColor: Theme.of(context).colorScheme.primary,
-            ),
-            PlayerScoreCard(
-              initials: state.player2Initials,
-              score: state.score2,
-              isAddActive: p2ControlsEnabled && state.isAddMode,
-              isMinusActive: p2ControlsEnabled && !state.isAddMode,
-              controlsEnabled: p2ControlsEnabled,
-              isCurrentTurn: state.currentTurn == 2,
-              onAddPressed: () => _setScoreDirection(2, true),
-              onMinusPressed: () => _setScoreDirection(2, false),
-              onCardTap: state.vsComputer ? null : () => _switchTurn(2),
-              accentColor: Theme.of(context).colorScheme.tertiary,
-            ),
+            for (var seat = 1; seat <= state.playerCount; seat++) _buildPlayerCard(seat, compact: compact),
           ],
         ),
         const SizedBox(height: 6),
@@ -818,26 +986,32 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     required VoidCallback? onPressed,
     required Color color,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onPressed != null;
+    final fg = enabled ? color : scheme.onSurface.withOpacity(0.3);
     return Expanded(
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: color,
-          side: BorderSide(color: color),
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+      child: Material(
+        color: enabled ? color.withOpacity(0.12) : scheme.onSurface.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 20, color: fg),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -846,14 +1020,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget _buildActionRibbon() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.35 : 0.08),
-            blurRadius: 6,
-            offset: const Offset(0, -2),
+            color: Colors.black.withOpacity(isDark ? 0.4 : 0.1),
+            blurRadius: 14,
+            offset: const Offset(0, -3),
           ),
         ],
       ),
@@ -877,7 +1052,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               onPressed: (state.isComplete || _aiBusy || !state.locked.any((row) => row.any((cell) => cell)))
                   ? null
                   : _startCapture,
-              color: Colors.teal),
+              color: Theme.of(context).colorScheme.tertiary),
+          if (state.vsComputer) ...[
+            const SizedBox(width: 6),
+            _ribbonButton(
+                icon: Icons.flag_outlined,
+                label: 'Used?',
+                onPressed: (!_aiBusy && state.canChallengeComputerMove) ? _challengeComputerMove : null,
+                color: Colors.deepOrange),
+          ],
         ],
       ),
     );
@@ -896,24 +1079,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         }
         if (mounted) Navigator.of(context).pop();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(state.vsComputer ? 'Vs Computer · ${state.aiDifficulty.label}' : 'Active Game'),
-          actions: [
-            IconButton(
-              tooltip: 'Used words',
-              icon: const Icon(Icons.list_alt),
-              onPressed: _showUsedWordsDialog,
-            ),
-            IconButton(
-              tooltip: 'Share match',
-              icon: const Icon(Icons.share),
-              onPressed: _shareResult,
-            ),
-          ],
-        ),
-        body: SafeArea(
-          child: Stack(
+      child: GWScaffold(
+        title: state.vsComputer ? 'Play Bot · ${state.aiDifficulty.label}' : 'Pass and Play',
+        actions: [
+          GWIconButton(icon: Icons.list_alt_rounded, tooltip: 'Used words', onTap: _showUsedWordsDialog),
+          GWIconButton(icon: Icons.share_rounded, tooltip: 'Share match', onTap: _shareResult),
+        ],
+        body: Stack(
             children: [
               OrientationBuilder(
                 builder: (context, orientation) {
@@ -923,8 +1095,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       Expanded(
                         child: RepaintBoundary(
                           key: _captureBoundaryKey,
-                          child: Container(
-                            color: Theme.of(context).scaffoldBackgroundColor,
+                          child: GWBackground(
                             child: Column(
                               children: [
                                 Padding(
@@ -978,9 +1149,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.teal.shade100,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.teal.shade700, width: 1.5),
+                          border: Border.all(color: Theme.of(context).colorScheme.tertiary, width: 1.8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Theme.of(context).colorScheme.tertiary.withOpacity(0.35),
+                              blurRadius: 14,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -988,12 +1166,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.teal.shade900),
+                              child: CircularProgressIndicator(strokeWidth: 2.2, color: Theme.of(context).colorScheme.tertiary),
                             ),
                             const SizedBox(width: 10),
                             Text(
                               'Computer is thinking…',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.teal.shade900),
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
                             ),
                           ],
                         ),
@@ -1024,7 +1202,6 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 ),
             ],
           ),
-        ),
       ),
     );
   }

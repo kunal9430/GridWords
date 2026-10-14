@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/profile_service.dart';
+import '../widgets/gw_kit.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -163,95 +164,110 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Edit Profile')),
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: GestureDetector(
-                          onTap: _showPhotoSourceSheet,
-                          child: Stack(
-                            children: [
-                              CircleAvatar(
-                                radius: 48,
-                                backgroundColor: primary.withOpacity(0.15),
-                                backgroundImage: (_photoBase64 != null && _photoBase64!.isNotEmpty)
-                                    ? MemoryImage(base64Decode(_photoBase64!))
-                                    : null,
-                                child: (_photoBase64 == null || _photoBase64!.isEmpty)
-                                    ? Icon(Icons.person, size: 48, color: primary)
-                                    : null,
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
+    final scheme = Theme.of(context).colorScheme;
+    final primary = scheme.primary;
+    final hasPhoto = _photoBase64 != null && _photoBase64!.isNotEmpty;
+    return GWScaffold(
+      title: 'Edit Profile',
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    GWReveal(
+                      child: Column(
+                        children: [
+                          GestureDetector(
+                            onTap: _showPhotoSourceSheet,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
-                                    color: primary,
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
+                                    gradient: LinearGradient(colors: GW.brand(context)),
+                                    boxShadow: [BoxShadow(color: primary.withOpacity(0.35), blurRadius: 16, offset: const Offset(0, 6))],
                                   ),
-                                  child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                                  child: CircleAvatar(
+                                    radius: 52,
+                                    backgroundColor: scheme.surface,
+                                    backgroundImage: hasPhoto ? MemoryImage(base64Decode(_photoBase64!)) : null,
+                                    child: !hasPhoto ? Icon(Icons.person, size: 52, color: primary) : null,
+                                  ),
                                 ),
-                              ),
-                            ],
+                                Positioned(
+                                  right: 2,
+                                  bottom: 2,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(
+                                      color: primary,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 2),
+                                    ),
+                                    child: Icon(Icons.camera_alt, size: 16, color: GW.onColor(primary)),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(height: 4),
+                          TextButton(onPressed: _showPhotoSourceSheet, child: const Text('Change Photo')),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    GWReveal(
+                      index: 1,
+                      child: GWCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const GWSectionTitle(icon: Icons.badge_rounded, title: 'Your details'),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Your Name',
+                                helperText: 'Used as Player 1\'s name',
+                                prefixIcon: Icon(Icons.person_outline_rounded),
+                                counterText: '',
+                              ),
+                              maxLength: _maxNameLength,
+                              validator: _validateName,
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _emailController,
+                              decoration: const InputDecoration(
+                                labelText: 'Email (optional)',
+                                prefixIcon: Icon(Icons.mail_outline_rounded),
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              validator: _validateEmail,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: TextButton(
-                          onPressed: _showPhotoSourceSheet,
-                          child: const Text('Change Photo'),
-                        ),
+                    ),
+                    const SizedBox(height: 22),
+                    GWReveal(
+                      index: 2,
+                      child: GWGradientButton(
+                        label: 'SAVE',
+                        icon: Icons.check_rounded,
+                        loading: _saving,
+                        onPressed: _saving ? null : _save,
                       ),
-                      const SizedBox(height: 20),
-                      TextFormField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Your Name',
-                          helperText: 'Used as Player 1\'s name',
-                        ),
-                        maxLength: _maxNameLength,
-                        validator: _validateName,
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(labelText: 'Email (optional)'),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: _validateEmail,
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _saving ? null : _save,
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Text('Save'),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-      ),
+            ),
     );
   }
 }

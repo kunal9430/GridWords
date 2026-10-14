@@ -11,6 +11,8 @@ A word is accepted only if ALL of these hold:
   4. It is not a plural / -es / -ies form of another accepted word.
   5. It is not marked offensive/vulgar in its definition or on the blocklist.
   6. It is not an acronym / abbreviation listed in tools/blocked_words.txt.
+  7. It is the 1st (base) form of a verb, never the 2nd / 3rd / 4th form
+     (walked, built, gone, walking, was ...) - see tools/verb_forms.py.
 A short list of everyday function words that WordNet omits (it, of, to...)
 is added with hand-written definitions.
 
@@ -116,6 +118,12 @@ for w, g in FUNCTION.items():
     words.setdefault(w, g)
 for w in ACRONYMS:
     words.pop(w, None)
+
+# The computer may only play the 1st verb form: drop V2 / V3 / V4 (and V5) forms.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from verb_forms import is_verb_form
+_all = set(words)
+words = {w: g for w, g in words.items() if not is_verb_form(w, _all)}
 
 with open(out_path, 'w', encoding='utf8') as f:
     for w in sorted(words):

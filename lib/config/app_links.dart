@@ -10,4 +10,7 @@ class AppLinks {
 
   /// Kept for backwards compatibility with any old references.
   static const String playStoreUrl = downloadUrl;
+
+  /// Shown in the profile menu's Help item.
+  static const String supportEmail = 'gridgamesplay@gmail.com';
 }
