@@ -7,6 +7,7 @@ import '../services/brightness_controller.dart';
 import '../services/profile_service.dart';
 import '../services/theme_controller.dart';
 import '../theme/app_theme.dart';
+import '../widgets/gw_kit.dart';
 import 'edit_profile_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -22,35 +23,29 @@ class SettingsScreen extends StatelessWidget {
       length: 4,
       child: Builder(
         builder: (context) {
-          // AppBarTheme already computes a foreground color that contrasts
-          // with the AppBar's background in both modes (see app_theme.dart)
-          // -- the title and back arrow use it automatically. TabBar does
-          // NOT inherit that though; it has its own default label colors
-          // (Theme.of(context).colorScheme.primary for the selected tab),
-          // which in light mode is the SAME color as the AppBar background
-          // itself, making the active tab invisible. Pin the TabBar's
-          // colors to the same contrasting foreground explicitly.
-          final tabForeground = Theme.of(context).appBarTheme.foregroundColor ?? Theme.of(context).colorScheme.onPrimary;
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('Settings'),
-              bottom: TabBar(
+          final scheme = Theme.of(context).colorScheme;
+          return GWScaffold(
+            title: 'Settings',
+            bottom: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: TabBar(
                 isScrollable: true,
-                // Material 3's default for a scrollable TabBar adds a
-                // leading inset (TabAlignment.startOffset) sized to sit
-                // next to a leading widget -- that's what was pushing the
-                // tabs to the right and cutting "Backup" off screen.
-                // TabAlignment.start removes that inset so tabs sit flush
-                // against the left edge.
                 tabAlignment: TabAlignment.start,
-                labelColor: tabForeground,
-                unselectedLabelColor: tabForeground.withOpacity(0.7),
-                indicatorColor: tabForeground,
+                dividerColor: Colors.transparent,
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(
+                  gradient: LinearGradient(colors: GW.brand(context)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                labelColor: GW.onColor(scheme.primary),
+                unselectedLabelColor: scheme.onSurface.withOpacity(0.7),
+                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 tabs: const [
-                  Tab(icon: Icon(Icons.palette_outlined), text: 'Appearance'),
-                  Tab(icon: Icon(Icons.brightness_6_outlined), text: 'Display'),
-                  Tab(icon: Icon(Icons.person_outline), text: 'Profile'),
-                  Tab(icon: Icon(Icons.backup_outlined), text: 'Backup'),
+                  Tab(height: 40, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.palette_outlined, size: 18), SizedBox(width: 6), Text('Appearance')])),
+                  Tab(height: 40, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.brightness_6_outlined, size: 18), SizedBox(width: 6), Text('Display')])),
+                  Tab(height: 40, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.person_outline, size: 18), SizedBox(width: 6), Text('Profile')])),
+                  Tab(height: 40, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.backup_outlined, size: 18), SizedBox(width: 6), Text('Backup')])),
                 ],
               ),
             ),
@@ -76,13 +71,11 @@ class _AppearanceTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = ThemeController.instance;
     final platformBrightness = MediaQuery.platformBrightnessOf(context);
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _AppearanceCard(controller: controller, platformBrightness: platformBrightness),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        GWReveal(child: _AppearanceCard(controller: controller, platformBrightness: platformBrightness)),
+      ],
     );
   }
 }
@@ -92,13 +85,11 @@ class _DisplayTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: const [
-          _BrightnessCard(),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: const [
+        GWReveal(child: _BrightnessCard()),
+      ],
     );
   }
 }
@@ -108,62 +99,82 @@ class _ProfileTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: ValueListenableBuilder<Profile>(
-                valueListenable: ProfileService.current,
-                builder: (context, profile, _) {
-                  return Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: primary.withOpacity(0.15),
+    final scheme = Theme.of(context).colorScheme;
+    final primary = scheme.primary;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        GWReveal(
+          child: GWCard(
+            gradient: LinearGradient(
+              colors: [primary.withOpacity(0.16), scheme.tertiary.withOpacity(0.14)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            child: ValueListenableBuilder<Profile>(
+              valueListenable: ProfileService.current,
+              builder: (context, profile, _) {
+                return Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(colors: GW.brand(context)),
+                      ),
+                      child: CircleAvatar(
+                        radius: 30,
+                        backgroundColor: scheme.surface,
                         backgroundImage: profile.hasPhoto ? MemoryImage(base64Decode(profile.photoBase64!)) : null,
-                        child: !profile.hasPhoto ? Icon(Icons.person, size: 28, color: primary) : null,
+                        child: !profile.hasPhoto ? Icon(Icons.person, size: 30, color: primary) : null,
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              profile.name.isEmpty ? 'No name set' : profile.name,
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              profile.email.isEmpty ? 'No email set' : profile.email,
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-                            ),
-                          ],
-                        ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            profile.name.isEmpty ? 'No name set' : profile.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            profile.email.isEmpty ? 'No email set' : profile.email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: scheme.onSurface.withOpacity(0.65), fontSize: 13),
+                          ),
+                        ],
                       ),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit Profile Details'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const EditProfileScreen()),
-              ),
+        ),
+        const SizedBox(height: 12),
+        GWReveal(
+          index: 1,
+          child: GWCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+            ),
+            child: const Row(
+              children: [
+                GWIconTile(icon: Icons.edit_rounded, size: 38),
+                SizedBox(width: 12),
+                Expanded(child: Text('Edit Profile Details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+                Icon(Icons.chevron_right_rounded),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -243,50 +254,47 @@ class _BackupTabState extends State<_BackupTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Backup & Restore', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Back up your profile and saved games, or restore them from a file.',
-                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        GWReveal(
+          child: GWCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const GWSectionTitle(
+                  icon: Icons.cloud_sync_rounded,
+                  title: 'Backup & Restore',
+                  subtitle: 'Keep your profile and saved games safe',
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Back up your profile and saved games, or restore them from a file.',
+                  style: TextStyle(fontSize: 13, height: 1.4, color: scheme.onSurface.withOpacity(0.7)),
+                ),
+                const SizedBox(height: 20),
+                GWGradientButton(
+                  label: 'Create & Share Backup',
+                  icon: Icons.ios_share,
+                  loading: _busy,
+                  onPressed: _busy ? null : _createBackup,
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _restoreBackup,
+                    icon: const Icon(Icons.file_open_outlined),
+                    label: const Text('Restore from Backup File'),
                   ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _busy ? null : _createBackup,
-                      icon: const Icon(Icons.ios_share),
-                      label: const Text('Create & Share Backup'),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _restoreBackup,
-                      icon: const Icon(Icons.file_open_outlined),
-                      label: const Text('Restore from Backup File'),
-                    ),
-                  ),
-                  if (_busy) ...[
-                    const SizedBox(height: 16),
-                    const Center(child: CircularProgressIndicator()),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -302,14 +310,14 @@ class _AppearanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return GWCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Mode', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
+            const GWSectionTitle(icon: Icons.contrast_rounded, title: 'Mode', subtitle: 'Follow the device, or pick light / dark'),
+            const SizedBox(height: 12),
             ValueListenableBuilder<ThemeMode>(
               valueListenable: controller.themeMode,
               builder: (context, mode, _) {
@@ -378,7 +386,7 @@ class _AppearanceCard extends StatelessWidget {
               },
             ),
             const SizedBox(height: 20),
-            const Text('Font Size', style: TextStyle(fontWeight: FontWeight.w600)),
+            const GWSectionTitle(icon: Icons.format_size_rounded, title: 'Font Size'),
             ValueListenableBuilder<double>(
               valueListenable: controller.fontScale,
               builder: (context, scale, _) {
@@ -422,9 +430,9 @@ class _BrightnessCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = BrightnessController.instance;
-    return Card(
+    return GWCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: ValueListenableBuilder<double?>(
           valueListenable: controller.level,
           builder: (context, level, _) {
@@ -435,7 +443,7 @@ class _BrightnessCard extends StatelessWidget {
                 Row(
                   children: [
                     const Expanded(
-                      child: Text('App Screen Brightness', style: TextStyle(fontWeight: FontWeight.w600)),
+                      child: GWSectionTitle(icon: Icons.brightness_6_rounded, title: 'App Screen Brightness'),
                     ),
                     Switch(
                       value: overrideEnabled,
@@ -451,7 +459,7 @@ class _BrightnessCard extends StatelessWidget {
                 ),
                 const Text(
                   'Adjust the game screen brightness',
-                  style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 if (overrideEnabled) ...[
                   const SizedBox(height: 8),

@@ -32,3 +32,13 @@ Both regenerate the Android project (`flutter create --platforms=android .`), th
 * Version name comes from `version:` in `pubspec.yaml` (currently `1.0.0+1`; the `+N` part is overridden by the run number).
 * The `test` job runs `flutter analyze` and `flutter test` but does not block the APK. To make it a gate, remove
   `continue-on-error: true` from it and add `needs: test` to the `apk` job.
+
+## Uploading through the GitHub website (drag and drop)
+
+- Drag-and-drop **skips folders that start with a dot**, so `.github/` and `.gitignore` are not uploaded.
+  Create the workflow once in the browser: **Add file → Create new file**, type
+  `.github/workflows/build-apk.yml`, paste the file contents, commit.
+- Drag-and-drop never deletes: remove old files (e.g. `codemagic.yaml`) from the website by opening
+  the file → ⋯ → **Delete file**.
+- The workflow runs on a push to **any branch**. Open **Actions → Build Android APK → latest run →
+  Artifacts → GridWords-APK**, download the zip and unzip it to get `GridWords.apk`.

@@ -16,21 +16,30 @@ class NumericStrip extends StatelessWidget {
     this.enabled = false,
   });
 
+  static const Color _orange = Color(0xFFE8863B);
+  static const Color _amber = Color(0xFFF4A947);
+
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final count = maxNumber + 1; // 0..maxNumber inclusive
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
         color: enabled
             ? (isDark ? const Color(0xFF3A2E12) : const Color(0xFFFFF3D6))
-            : (isDark ? const Color(0xFF23232F) : const Color(0xFFF0F0F5)),
-        borderRadius: BorderRadius.circular(10),
+            : scheme.surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: enabled ? const Color(0xFFE8A93B) : (isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+          color: enabled ? _orange : scheme.onSurface.withOpacity(isDark ? 0.14 : 0.1),
+          width: enabled ? 1.5 : 1,
         ),
+        boxShadow: enabled
+            ? [BoxShadow(color: _orange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 3))]
+            : const [],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -54,16 +63,39 @@ class NumericStrip extends StatelessWidget {
                   child: SizedBox(
                     width: buttonWidth,
                     height: 38,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        backgroundColor: enabled ? const Color(0xFFE8863B) : (isDark ? Colors.grey.shade700 : Colors.grey.shade400),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: enabled ? () => onNumberTap(number) : null,
-                      child: FittedBox(
-                        child: Text('$number', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    child: Material(
+                      color: enabled ? null : scheme.onSurface.withOpacity(0.07),
+                      type: enabled ? MaterialType.transparency : MaterialType.canvas,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Ink(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          gradient: enabled
+                              ? const LinearGradient(
+                                  colors: [_amber, _orange],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                )
+                              : null,
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: enabled ? () => onNumberTap(number) : null,
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 1),
+                              child: FittedBox(
+                                child: Text(
+                                  '$number',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: enabled ? Colors.white : scheme.onSurface.withOpacity(0.35),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
