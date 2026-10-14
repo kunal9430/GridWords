@@ -226,7 +226,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                         child: Text('No words captured yet.'),
                       )
                     else ...[
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(bottom: 8),
                         child: Text(
                           'Long-press and drag a word onto the bin below to remove it.',
