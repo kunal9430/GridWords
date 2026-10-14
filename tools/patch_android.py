@@ -6,7 +6,8 @@ identically on Linux (GitHub Actions) and macOS:
   1. force compileSdk 36 on every Gradle subproject (plugins like
      file_picker hardcode an older one and fail the AAR metadata check),
   2. set the launcher label to "Grid Words",
-  3. set the real applicationId.
+  3. set the real applicationId,
+  4. allow INTERNET (online multiplayer).
 """
 import pathlib, re
 
@@ -54,7 +55,11 @@ if MARKER not in text:
 
 # 2. app label
 manifest = android / "app/src/main/AndroidManifest.xml"
-manifest.write_text(re.sub(r'android:label="[^"]*"', 'android:label="Grid Words"', manifest.read_text()))
+text = re.sub(r'android:label="[^"]*"', 'android:label="Grid Words"', manifest.read_text())
+# 2b. online play needs network access in release builds too
+if "android.permission.INTERNET" not in text:
+    text = text.replace("<application", '<uses-permission android:name="android.permission.INTERNET"/>\n    <application', 1)
+manifest.write_text(text)
 
 # 3. applicationId (namespace is deliberately left alone: it must match MainActivity's package)
 for name in ("build.gradle", "build.gradle.kts"):

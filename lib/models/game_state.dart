@@ -9,14 +9,14 @@ import '../services/scoreboard_name_resolver.dart';
 /// here is serializable so a kill/resume restores the match mid-turn.
 class GameState {
   String id;
-  String player1Name;
-  String player2Name;
-  String player1Initials;
-  String player2Initials;
+
+  /// Everyone in the match, in turn order (2 to 4 players). In a computer
+  /// match the computer is always the LAST player.
+  List<String> playerNames;
+  List<String> playerInitials;
+  List<int> scores;
   int rows;
   int cols;
-  int score1;
-  int score2;
   List<List<String>> grid;
   List<List<bool>> locked;
   DateTime lastSaved;
@@ -26,9 +26,9 @@ class GameState {
   /// word is captured, neither player can capture it again this match.
   List<String> usedWords;
 
-  /// Which player's turn is currently active: 1 or 2. Can change either
-  /// automatically (after a score is applied) or manually (the player
-  /// taps the other player's card to claim the turn).
+  /// Which player's turn is currently active: 1 to [playerCount]. Can change
+  /// either automatically (after a score is applied) or manually (a player
+  /// taps another player's card to give them the turn).
   int currentTurn;
 
   /// Whether the Numeric Strip is currently armed/enabled for the active
@@ -50,9 +50,8 @@ class GameState {
   /// whenever a fresh turn begins.
   bool isAddMode;
 
-  /// True for a "Play Against Computer" match. Player 1 is always the
-  /// human and Player 2 the computer. False (the default) leaves the
-  /// original two-human behaviour completely untouched.
+  /// True for a "Play Bot" match: the last player is the computer and every
+  /// other player is a human. False (the default) is "Pass and Play".
   bool vsComputer;
 
   /// [AiDifficulty.name] of the computer opponent; only meaningful when
@@ -74,14 +73,11 @@ class GameState {
 
   GameState({
     required this.id,
-    required this.player1Name,
-    required this.player2Name,
-    required this.player1Initials,
-    required this.player2Initials,
+    required this.playerNames,
+    required this.playerInitials,
     required this.rows,
     required this.cols,
-    this.score1 = 0,
-    this.score2 = 0,
+    List<int>? scores,
     this.currentTurn = 1,
     this.scoringArmed = false,
     this.pendingRow,
@@ -98,11 +94,48 @@ class GameState {
     List<List<bool>>? locked,
     DateTime? lastSaved,
     List<String>? usedWords,
-  })  : grid = grid ?? List.generate(rows, (_) => List.generate(cols, (_) => '')),
+  })  : scores = scores ?? List<int>.filled(playerNames.length, 0),
+        grid = grid ?? List.generate(rows, (_) => List.generate(cols, (_) => '')),
         locked = locked ?? List.generate(rows, (_) => List.generate(cols, (_) => false)),
         lastSaved = lastSaved ?? DateTime.now(),
         usedWords = usedWords ?? [],
         aiWordCells = aiWordCells ?? [];
+
+  static const int minPlayers = 2;
+  static const int maxPlayers = 4;
+
+  int get playerCount => playerNames.length;
+
+  // Convenience accessors for the first two seats.
+  String get player1Name => playerNames[0];
+  String get player2Name => playerNames[1];
+  String get player1Initials => playerInitials[0];
+  String get player2Initials => playerInitials[1];
+  int get score1 => scores[0];
+  set score1(int v) => scores[0] = v;
+  int get score2 => scores[1];
+  set score2(int v) => scores[1] = v;
+
+  /// 1-based seat of the computer, or 0 when there is no computer.
+  int get computerSeat => vsComputer ? playerCount : 0;
+
+  /// True when [seat] (1-based) is the computer.
+  bool isComputerSeat(int seat) => vsComputer && seat == playerCount;
+
+  /// The seat that plays after [seat].
+  int nextSeat(int seat) => seat % playerCount + 1;
+
+  /// Seats holding the highest score (more than one on a tie).
+  List<int> get leaders {
+    var best = scores.first;
+    for (final v in scores) {
+      if (v > best) best = v;
+    }
+    return [for (var i = 0; i < scores.length; i++) if (scores[i] == best) i + 1];
+  }
+
+  /// "A vs B vs C" - used for list titles.
+  String get matchTitle => playerInitials.join(' vs ');
 
   /// Max Word Length = max(Rows, Columns). Both dimensions are capped
   /// during setup (1 to 10), so this is always between 1 and 10.
@@ -136,10 +169,10 @@ class GameState {
   AiDifficulty get aiDifficulty => AiDifficulty.fromName(difficulty);
 
   /// True when the computer is due to move: a computer match, Player 2's
-  /// turn, a vacant cell still exists, and no score is outstanding. It is
+  /// turn (the last seat), a vacant cell still exists, and no score is outstanding. It is
   /// false once the match is over, so the computer can never play after
   /// the game ends or out of turn.
-  bool get isComputerTurn => vsComputer && currentTurn == 2 && !isBoardFull && !scoringArmed;
+  bool get isComputerTurn => vsComputer && currentTurn == playerCount && !isBoardFull && !scoringArmed;
 
   /// Records the active player's score for this turn and hands the turn to
   /// the other player. This is the ONE place a turn's score is applied -
@@ -147,17 +180,13 @@ class GameState {
   /// it, so the two can never score differently.
   void applyTurnScore(int delta) {
     final scorer = currentTurn;
-    if (scorer == 1) {
-      score1 += delta;
-      // The human has moved again: the computer's last move is no longer
-      // "the latest" so its highlight goes away.
-      clearAiHighlight();
-    } else {
-      score2 += delta;
-    }
+    scores[scorer - 1] += delta;
+    // A human has moved again: the computer's last move is no longer
+    // "the latest" so its highlight goes away.
+    if (!isComputerSeat(scorer)) clearAiHighlight();
     pendingRow = null;
     pendingCol = null;
-    currentTurn = scorer == 1 ? 2 : 1;
+    currentTurn = nextSeat(scorer);
     scoringArmed = false;
     isAddMode = true;
   }
@@ -171,8 +200,8 @@ class GameState {
 
   /// Applies the computer's chosen move: one letter into one vacant cell,
   /// its claimed word (if any) added to the used-words list, its points
-  /// added to Player 2 exactly once, and the turn passed back to the
-  /// human. Returns false - changing nothing - if it isn't the computer's
+  /// added to the computer exactly once, and the turn passed on to the
+  /// first player. Returns false - changing nothing - if it isn't the computer's
   /// turn, the cell is off-board or already occupied, or the claimed word
   /// doesn't actually lie on the board through the new letter.
   bool applyComputerMove(ComputerMoveResult move) {
@@ -194,13 +223,41 @@ class GameState {
     pendingCol = c;
     scoringArmed = true;
     isAddMode = true;
-    applyTurnScore(word?.length ?? 0); // scores Player 2, passes turn to 1
+    applyTurnScore(word?.length ?? 0); // scores the computer, passes the turn on
 
     aiMoveRow = r;
     aiMoveCol = c;
     aiWord = word;
     aiWordCells = word == null ? [] : List<int>.from(move.wordCells);
     return true;
+  }
+
+  /// Overwrites every field of this match with [o]'s, in place. Used when
+  /// another device's newer version of an online match arrives, so the
+  /// screen keeps holding the same [GameState] object.
+  void copyFrom(GameState o) {
+    id = o.id;
+    playerNames = List<String>.from(o.playerNames);
+    playerInitials = List<String>.from(o.playerInitials);
+    scores = List<int>.from(o.scores);
+    rows = o.rows;
+    cols = o.cols;
+    grid = [for (final r in o.grid) List<String>.from(r)];
+    locked = [for (final r in o.locked) List<bool>.from(r)];
+    lastSaved = o.lastSaved;
+    usedWords = List<String>.from(o.usedWords);
+    currentTurn = o.currentTurn;
+    scoringArmed = o.scoringArmed;
+    pendingRow = o.pendingRow;
+    pendingCol = o.pendingCol;
+    isAddMode = o.isAddMode;
+    vsComputer = o.vsComputer;
+    difficulty = o.difficulty;
+    computerStarts = o.computerStarts;
+    aiMoveRow = o.aiMoveRow;
+    aiMoveCol = o.aiMoveCol;
+    aiWord = o.aiWord;
+    aiWordCells = List<int>.from(o.aiWordCells);
   }
 
   /// Number of cells still empty.
@@ -250,14 +307,15 @@ class GameState {
     final word = aiWord!;
     grid[r][c] = '';
     locked[r][c] = false;
-    score2 -= word.length;
-    if (score2 < 0) score2 = 0;
+    final seat = computerSeat - 1;
+    scores[seat] -= word.length;
+    if (scores[seat] < 0) scores[seat] = 0;
     addUsedWord(word);
     pendingRow = null;
     pendingCol = null;
     scoringArmed = false;
     isAddMode = true;
-    currentTurn = 2;
+    currentTurn = computerSeat;
     clearAiHighlight();
     return true;
   }
@@ -300,15 +358,14 @@ class GameState {
   void resetMatch() {
     grid = List.generate(rows, (_) => List.generate(cols, (_) => ''));
     locked = List.generate(rows, (_) => List.generate(cols, (_) => false));
-    score1 = 0;
-    score2 = 0;
+    scores = List<int>.filled(playerCount, 0);
     scoringArmed = false;
     pendingRow = null;
     pendingCol = null;
     isAddMode = true;
     usedWords.clear();
     clearAiHighlight();
-    if (vsComputer) currentTurn = computerStarts ? 2 : 1;
+    if (vsComputer) currentTurn = computerStarts ? computerSeat : 1;
   }
 
   /// Extracts the first letter of every whitespace-separated word in
@@ -322,61 +379,75 @@ class GameState {
     return parts.map((p) => p[0].toUpperCase()).join();
   }
 
+  /// A "Pass and Play" match for 2 to 4 people sharing one device.
+  /// [playerNames] are in turn order; the first player moves first.
   factory GameState.newGame({
-    required String player1Name,
-    required String player2Name,
+    required List<String> playerNames,
     required int rows,
     required int cols,
   }) {
-    final resolved = ScoreboardNameResolver.resolve(player1: player1Name, player2: player2Name);
+    assert(playerNames.length >= minPlayers && playerNames.length <= maxPlayers);
+    final names = [for (final n in playerNames) n.trim()];
     return GameState(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      player1Name: player1Name.trim(),
-      player2Name: player2Name.trim(),
-      player1Initials: resolved.player1Label,
-      player2Initials: resolved.player2Label,
+      playerNames: names,
+      playerInitials: ScoreboardNameResolver.resolveMany(names),
       rows: rows,
       cols: cols,
     );
   }
 
-  /// A "Play Against Computer" match: the human is Player 1, the computer
-  /// Player 2. The human moves first unless [computerStarts] is true.
+  /// A "Play Bot" match: [humanNames] (1 to 3 people, in turn order) plus
+  /// the computer, who is always the last player. The first human moves
+  /// first unless [computerStarts] is true.
   factory GameState.newComputerGame({
-    required String humanName,
+    required List<String> humanNames,
     required int rows,
     required int cols,
     required AiDifficulty difficulty,
     bool computerStarts = false,
   }) {
+    assert(humanNames.isNotEmpty && humanNames.length < maxPlayers);
     const computerName = 'Computer';
-    final resolved = ScoreboardNameResolver.resolve(player1: humanName, player2: computerName);
+    final humans = [for (final n in humanNames) n.trim()];
+    final List<String> humanLabels;
+    if (humans.length == 1) {
+      // Keep the classic one-human behaviour: make sure the label can never
+      // clash with the computer's own.
+      humanLabels = [ScoreboardNameResolver.resolve(player1: humans.first, player2: computerName).player1Label];
+    } else {
+      humanLabels = ScoreboardNameResolver.resolveMany(humans);
+    }
+    final seat = humans.length + 1;
     return GameState(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      player1Name: humanName.trim(),
-      player2Name: computerName,
-      player1Initials: resolved.player1Label,
-      player2Initials: '🤖 CPU',
+      playerNames: [...humans, computerName],
+      playerInitials: [...humanLabels, '🤖 CPU'],
       rows: rows,
       cols: cols,
       vsComputer: true,
       difficulty: difficulty.name,
       computerStarts: computerStarts,
-      currentTurn: computerStarts ? 2 : 1,
+      currentTurn: computerStarts ? seat : 1,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'playerNames': playerNames,
+      'playerInitials': playerInitials,
+      'scores': scores,
+      // First two seats are also written under the original keys so the
+      // save stays readable by older code.
       'player1Name': player1Name,
       'player2Name': player2Name,
       'player1Initials': player1Initials,
       'player2Initials': player2Initials,
-      'rows': rows,
-      'cols': cols,
       'score1': score1,
       'score2': score2,
+      'rows': rows,
+      'cols': cols,
       'currentTurn': currentTurn,
       'scoringArmed': scoringArmed,
       'pendingRow': pendingRow,
@@ -397,16 +468,26 @@ class GameState {
   }
 
   factory GameState.fromJson(Map<String, dynamic> json) {
+    // Saves from before 3-4 player support only have the two-player keys.
+    final namesJson = json['playerNames'] as List<dynamic>?;
+    final List<String> names = namesJson != null
+        ? namesJson.map((e) => e.toString()).toList()
+        : [json['player1Name'] as String, json['player2Name'] as String];
+    final initialsJson = json['playerInitials'] as List<dynamic>?;
+    final List<String> initials = initialsJson != null
+        ? initialsJson.map((e) => e.toString()).toList()
+        : [json['player1Initials'] as String, json['player2Initials'] as String];
+    final scoresJson = json['scores'] as List<dynamic>?;
+    final List<int> scores = scoresJson != null
+        ? scoresJson.map((e) => e as int).toList()
+        : [json['score1'] as int, json['score2'] as int];
     return GameState(
       id: json['id'] as String,
-      player1Name: json['player1Name'] as String,
-      player2Name: json['player2Name'] as String,
-      player1Initials: json['player1Initials'] as String,
-      player2Initials: json['player2Initials'] as String,
+      playerNames: names,
+      playerInitials: initials,
+      scores: scores,
       rows: json['rows'] as int,
       cols: json['cols'] as int,
-      score1: json['score1'] as int,
-      score2: json['score2'] as int,
       // Fallbacks keep older saved games (from before these fields
       // existed) loadable without crashing.
       currentTurn: json['currentTurn'] as int? ?? 1,
