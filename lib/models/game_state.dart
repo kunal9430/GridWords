@@ -203,6 +203,65 @@ class GameState {
     return true;
   }
 
+  /// Number of cells still empty.
+  int get vacantCount {
+    var n = 0;
+    for (final row in locked) {
+      for (final cell in row) {
+        if (!cell) n++;
+      }
+    }
+    return n;
+  }
+
+  /// True when [move] would fill the very last empty cell AND claims a
+  /// word - the one case where the computer must first ask the human
+  /// whether that word has already been used before ending the game.
+  bool endsGameWithWord(ComputerMoveResult move) {
+    if (move.word == null || vacantCount != 1) return false;
+    final r = move.row;
+    final c = move.col;
+    return r >= 0 && r < rows && c >= 0 && c < cols && !locked[r][c];
+  }
+
+  /// True while the human may tell the computer "that word was already
+  /// used": it is the human's turn, the computer's latest move claimed a
+  /// word, the human has not started their own turn, and the game is not
+  /// over (a game-ending word is confirmed with the human beforehand).
+  bool get canChallengeComputerMove =>
+      vsComputer &&
+      aiMoveRow != null &&
+      aiMoveCol != null &&
+      aiWord != null &&
+      currentTurn == 1 &&
+      !scoringArmed &&
+      !isBoardFull;
+
+  /// Takes back the computer's latest move: its letter leaves the board,
+  /// its points are removed and the turn returns to the computer so it can
+  /// try again. The challenged word stays (or is put) in the used-words
+  /// list so the computer can never claim it again. Returns false, changing
+  /// nothing, if the move cannot be challenged.
+  bool undoLastComputerMove() {
+    if (!canChallengeComputerMove) return false;
+    final r = aiMoveRow!;
+    final c = aiMoveCol!;
+    if (r < 0 || r >= rows || c < 0 || c >= cols || !locked[r][c]) return false;
+    final word = aiWord!;
+    grid[r][c] = '';
+    locked[r][c] = false;
+    score2 -= word.length;
+    if (score2 < 0) score2 = 0;
+    addUsedWord(word);
+    pendingRow = null;
+    pendingCol = null;
+    scoringArmed = false;
+    isAddMode = true;
+    currentTurn = 2;
+    clearAiHighlight();
+    return true;
+  }
+
   /// Sanity check that the claimed word is really spelled by contiguous
   /// board cells (after the new letter) in a straight line through (row,col).
   bool _claimMatchesBoard(ComputerMoveResult move) {

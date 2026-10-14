@@ -3,10 +3,14 @@ import 'package:characters/characters.dart';
 import '../ai/difficulty.dart';
 import '../models/game_state.dart';
 import '../services/profile_service.dart';
+import '../widgets/gw_kit.dart';
 import 'game_screen.dart';
 
 class SetupScreen extends StatefulWidget {
-  const SetupScreen({super.key});
+  /// Opens the screen with "Vs Computer" already selected (used by the
+  /// home screen's "Play vs Computer" card).
+  final bool initialVsComputer;
+  const SetupScreen({super.key, this.initialVsComputer = false});
 
   @override
   State<SetupScreen> createState() => _SetupScreenState();
@@ -33,6 +37,7 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   void initState() {
     super.initState();
+    _vsComputer = widget.initialVsComputer;
     _rowsController.addListener(_updateDerivedFields);
     _colsController.addListener(_updateDerivedFields);
     _prefillProfileName();
@@ -138,121 +143,340 @@ class _SetupScreenState extends State<SetupScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Game Setup')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
+  static const Map<AiDifficulty, IconData> _levelIcons = {
+    AiDifficulty.easy: Icons.eco_rounded,
+    AiDifficulty.medium: Icons.bolt_rounded,
+    AiDifficulty.hard: Icons.local_fire_department_rounded,
+    AiDifficulty.expert: Icons.psychology_rounded,
+  };
+
+  static String _levelBlurb(AiDifficulty d) {
+    switch (d) {
+      case AiDifficulty.easy:
+        return 'Plays a random scoring word. Friendly and beatable.';
+      case AiDifficulty.medium:
+        return 'Looks one move ahead: its word minus your best reply.';
+      case AiDifficulty.hard:
+        return 'Thinks three moves ahead and blocks your best cells.';
+      case AiDifficulty.expert:
+        return 'Searches up to five moves deep. Ruthless.';
+    }
+  }
+
+  Widget _buildModeCard() {
+    return Row(
+      children: [
+        Expanded(
+          child: GWChoice(
+            label: 'Two Players',
+            caption: 'Pass the phone',
+            icon: Icons.people_alt_rounded,
+            selected: !_vsComputer,
+            onTap: () => setState(() => _vsComputer = false),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: GWChoice(
+            label: 'Vs Computer',
+            caption: 'Beat the bot',
+            icon: Icons.smart_toy_rounded,
+            selected: _vsComputer,
+            onTap: () => setState(() => _vsComputer = true),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPlayersCard() {
+    return GWCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GWSectionTitle(
+            icon: Icons.person_rounded,
+            title: _vsComputer ? 'You' : 'Players',
+            subtitle: _vsComputer ? 'You are Player 1' : 'Enter both names',
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _p1Controller,
+            decoration: InputDecoration(
+              labelText: _vsComputer ? 'Your Name' : 'Player 1 Name',
+              prefixIcon: const Icon(Icons.person_outline_rounded),
+              counterText: '',
+            ),
+            maxLength: _maxNameLength,
+            validator: _validateName,
+          ),
+          if (!_vsComputer) ...[
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _p2Controller,
+              decoration: const InputDecoration(
+                labelText: 'Player 2 Name',
+                prefixIcon: Icon(Icons.person_outline_rounded),
+                counterText: '',
+              ),
+              maxLength: _maxNameLength,
+              validator: _validateName,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDifficultyCard() {
+    return GWCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const GWSectionTitle(icon: Icons.smart_toy_rounded, title: 'Computer level'),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (final d in AiDifficulty.values) ...[
+                Expanded(
+                  child: GWChoice(
+                    label: d.label,
+                    icon: _levelIcons[d] ?? Icons.bolt_rounded,
+                    selected: _difficulty == d,
+                    onTap: () => setState(() => _difficulty = d),
+                  ),
+                ),
+                if (d != AiDifficulty.values.last) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: Text(
+              _levelBlurb(_difficulty),
+              key: ValueKey<AiDifficulty>(_difficulty),
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.35,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFirstPlayerCard() {
+    return GWCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const GWSectionTitle(icon: Icons.flag_rounded, title: 'Who plays first?'),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: GWChoice(
+                  label: 'Me',
+                  icon: Icons.person_rounded,
+                  selected: !_computerStarts,
+                  onTap: () => setState(() => _computerStarts = false),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GWChoice(
+                  label: 'Computer',
+                  icon: Icons.smart_toy_rounded,
+                  selected: _computerStarts,
+                  onTap: () => setState(() => _computerStarts = true),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Small live drawing of the board that is about to be played.
+  Widget _buildBoardPreview(int? rows, int? cols) {
+    final scheme = Theme.of(context).colorScheme;
+    if (rows == null ||
+        cols == null ||
+        rows < _minDimension ||
+        rows > _maxDimension ||
+        cols < _minDimension ||
+        cols > _maxDimension) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+        decoration: BoxDecoration(
+          color: scheme.primary.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          'Enter rows and columns to preview your board',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12.5, color: scheme.onSurface.withOpacity(0.6)),
+        ),
+      );
+    }
+    const box = 120.0;
+    final cell = (box / (rows > cols ? rows : cols)).clamp(5.0, 18.0);
+    final maxLen = rows > cols ? rows : cols;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.primary.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: box,
+            height: box,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var r = 0; r < rows; r++)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var c = 0; c < cols; c++)
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: cell - 2,
+                            height: cell - 2,
+                            margin: const EdgeInsets.all(1),
+                            decoration: BoxDecoration(
+                              color: (r + c).isEven ? scheme.primary.withOpacity(0.32) : scheme.tertiary.withOpacity(0.32),
+                              borderRadius: BorderRadius.circular(cell > 9 ? 3 : 1.5),
+                            ),
+                          ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(value: false, icon: Icon(Icons.people), label: Text('2 Players')),
-                      ButtonSegment(value: true, icon: Icon(Icons.smart_toy), label: Text('Vs Computer')),
-                    ],
-                    selected: {_vsComputer},
-                    onSelectionChanged: (sel) => setState(() => _vsComputer = sel.first),
-                  ),
+                Text('$rows × $cols', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(
+                  '${rows * cols} cells',
+                  style: TextStyle(fontSize: 12.5, color: scheme.onSurface.withOpacity(0.6)),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _p1Controller,
-                  decoration: InputDecoration(labelText: _vsComputer ? 'Your Name' : 'Player 1 Name'),
-                  maxLength: _maxNameLength,
-                  validator: _validateName,
-                ),
-                const SizedBox(height: 16),
-                if (_vsComputer) ...[
-                  const Text('Computer difficulty', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final d in AiDifficulty.values)
-                        ChoiceChip(
-                          label: Text(d.label),
-                          selected: _difficulty == d,
-                          onSelected: (_) => setState(() => _difficulty = d),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Who plays first?', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment(value: false, icon: Icon(Icons.person), label: Text('Me')),
-                        ButtonSegment(value: true, icon: Icon(Icons.smart_toy), label: Text('Computer')),
-                      ],
-                      selected: {_computerStarts},
-                      onSelectionChanged: (sel) => setState(() => _computerStarts = sel.first),
-                    ),
-                  ),
-                ] else
-                  TextFormField(
-                    controller: _p2Controller,
-                    decoration: const InputDecoration(labelText: 'Player 2 Name'),
-                    maxLength: _maxNameLength,
-                    validator: _validateName,
-                  ),
-                const SizedBox(height: 16),
-                TextFormField(
+                const SizedBox(height: 10),
+                GWBadge(text: 'Max word length: $maxLen', color: scheme.primary, icon: Icons.straighten_rounded),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBoardCard() {
+    final rows = int.tryParse(_rowsController.text.trim());
+    final cols = int.tryParse(_colsController.text.trim());
+    return GWCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const GWSectionTitle(
+            icon: Icons.grid_view_rounded,
+            title: 'Board size',
+            subtitle: 'Pick rows and columns from 1 to 10',
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextFormField(
                   controller: _rowsController,
                   decoration: const InputDecoration(
-                    labelText: 'Total Rows (R)',
-                    helperText: 'Select number from 1 to 10',
+                    labelText: 'Rows (R)',
+                    prefixIcon: Icon(Icons.table_rows_rounded),
                   ),
                   keyboardType: TextInputType.number,
                   validator: _validateDimension,
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
                   controller: _colsController,
                   decoration: const InputDecoration(
-                    labelText: 'Total Columns (C)',
-                    helperText: 'Select number from 1 to 10',
+                    labelText: 'Columns (C)',
+                    prefixIcon: Icon(Icons.view_column_rounded),
                   ),
                   keyboardType: TextInputType.number,
                   validator: _validateDimension,
                 ),
-                if (_crossDimensionError != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
+              ),
+            ],
+          ),
+          if (_crossDimensionError != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline_rounded, size: 16, color: Colors.red),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
                     _crossDimensionError!,
-                    style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _maxWordLengthController,
-                  readOnly: true,
-                  decoration: InputDecoration(
-                    labelText: 'Max Word Length (auto)',
-                    fillColor: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.grey.shade800
-                        : Colors.grey.shade200,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _onPlayPressed,
-                    child: const Text('PLAY', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(color: Colors.red, fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
+          ],
+          const SizedBox(height: 14),
+          _buildBoardPreview(rows, cols),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GWScaffold(
+      title: 'Game Setup',
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              GWReveal(index: 0, child: _buildModeCard()),
+              const SizedBox(height: 14),
+              GWReveal(index: 1, child: _buildPlayersCard()),
+              if (_vsComputer) ...[
+                const SizedBox(height: 14),
+                GWReveal(index: 2, child: _buildDifficultyCard()),
+                const SizedBox(height: 14),
+                GWReveal(index: 3, child: _buildFirstPlayerCard()),
+              ],
+              const SizedBox(height: 14),
+              GWReveal(index: 4, child: _buildBoardCard()),
+              const SizedBox(height: 22),
+              GWReveal(
+                index: 5,
+                child: GWGradientButton(label: 'PLAY', icon: Icons.play_arrow_rounded, height: 56, onPressed: _onPlayPressed),
+              ),
+            ],
           ),
         ),
       ),

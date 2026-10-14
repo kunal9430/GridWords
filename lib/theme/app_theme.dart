@@ -168,6 +168,9 @@ class AppTheme {
       fontFamilyFallback: const ['Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji'],
     );
 
+    final onSurface = colorScheme.onSurface;
+    final hairline = onSurface.withOpacity(isDark ? 0.14 : 0.12);
+
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
@@ -181,33 +184,111 @@ class AppTheme {
       scaffoldBackgroundColor: option.background,
       cardColor: option.surface,
       dividerColor: isDark ? Colors.grey.shade800 : Colors.grey.shade300,
+      // Headers are drawn by the screens themselves on the soft gradient
+      // page (see widgets/gw_kit.dart), so any stock AppBar is transparent.
       appBarTheme: AppBarTheme(
-        backgroundColor: isDark ? option.surface : option.primary,
-        foregroundColor: onColorFor(isDark ? option.surface : option.primary),
+        backgroundColor: Colors.transparent,
+        foregroundColor: onSurface,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
         centerTitle: false,
+        titleTextStyle: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: onSurface),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          elevation: 2,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
         ),
       ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
       inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
         fillColor: option.surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: hairline)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: hairline)),
+        focusedBorder:
+            OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: colorScheme.primary, width: 2)),
+        errorBorder:
+            OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: colorScheme.error)),
+        focusedErrorBorder:
+            OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: colorScheme.error, width: 2)),
       ),
       cardTheme: CardThemeData(
         color: option.surface,
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_radius)),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_radius + 6),
+          side: BorderSide(color: onSurface.withOpacity(isDark ? 0.08 : 0.05)),
+        ),
       ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: option.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: onSurface),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: option.surface,
+        surfaceTintColor: Colors.transparent,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isDark ? const Color(0xFFEDEDF7) : const Color(0xFF23232F),
+        contentTextStyle: TextStyle(
+          color: isDark ? Colors.black87 : Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: colorScheme.primary.withOpacity(0.12),
+        side: BorderSide.none,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        labelStyle: TextStyle(fontWeight: FontWeight.w700, color: onSurface),
+      ),
+      sliderTheme: const SliderThemeData(trackHeight: 6),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+          side: WidgetStatePropertyAll(BorderSide(color: hairline)),
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected) ? colorScheme.primary : option.surface,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected) ? colorScheme.onPrimary : onSurface,
+          ),
+          textStyle: const WidgetStatePropertyAll(TextStyle(fontWeight: FontWeight.w700)),
+        ),
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: colorScheme.primary),
     );
   }
 }
