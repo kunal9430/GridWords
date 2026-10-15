@@ -31,7 +31,7 @@ class Lobby {
 
   factory Lobby.fromJson(Map<String, dynamic> j) => Lobby(
         players: (j['players'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList(),
-        maxPlayers: j['max'] as int? ?? 4,
+        maxPlayers: j['max'] as int? ?? 3,
         rows: j['rows'] as int? ?? 5,
         cols: j['cols'] as int? ?? 5,
         started: j['started'] as bool? ?? false,

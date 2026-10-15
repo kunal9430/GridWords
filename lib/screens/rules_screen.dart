@@ -6,10 +6,10 @@ class RulesScreen extends StatelessWidget {
 
   static const List<_Rule> _rules = [
     _Rule('1', 'Game Objective', Icons.flag_rounded,
-        'Two to four players take turns building words on a shared grid, one letter per turn, '
+        'Two or three players take turns building words on a shared grid, one letter per turn, '
                     'earning points for each turn as they go.'),
     _Rule('2', 'Setup Rules', Icons.tune_rounded,
-        'Pick Pass and Play or Play Bot, then how many players (2 to 4 in total, the Computer included). Choose Rows (R) and Columns (C) for the board, each from 1 to 10, with at least one of '
+        'Pick Pass and Play or Play Bot, then how many players (2 or 3 in total, the Computer included). Choose Rows (R) and Columns (C) for the board, each from 1 to 10, with at least one of '
                     'them greater than 1. Max Word Length is automatically calculated as the larger of R and '
                     'C (so always 1 to 10), and sets the range of the scoring number strip.'),
     _Rule('3', 'Placing a Letter', Icons.touch_app_rounded,
@@ -56,7 +56,7 @@ class RulesScreen extends StatelessWidget {
         '(walked, ran), the past participle (gone, broken) or the -ing form (walking, building).'),
     _Rule('11', 'Playing Online', Icons.public_rounded,
         'Tap "Play Online" on the home screen. One person creates a room and shares its 6-character code; '
-        'up to three friends join with it on their own phones, then the host starts the game. Everyone sees the '
+        'up to two friends join with it on their own phones, then the host starts the game. Everyone sees the '
         'same live board and anyone can place a letter, score or hand over the turn, so agree on whose turn it is '
         'out loud. If two people act at the same moment, the later action is dropped and the newer board is shown. '
         'Online games have no computer player.'),

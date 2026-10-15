@@ -10,7 +10,7 @@ import '../services/scoreboard_name_resolver.dart';
 class GameState {
   String id;
 
-  /// Everyone in the match, in turn order (2 to 4 players). In a computer
+  /// Everyone in the match, in turn order (2 to 3 players). In a computer
   /// match the computer is always the LAST player.
   List<String> playerNames;
   List<String> playerInitials;
@@ -102,7 +102,7 @@ class GameState {
         aiWordCells = aiWordCells ?? [];
 
   static const int minPlayers = 2;
-  static const int maxPlayers = 4;
+  static const int maxPlayers = 3;
 
   int get playerCount => playerNames.length;
 
@@ -379,7 +379,7 @@ class GameState {
     return parts.map((p) => p[0].toUpperCase()).join();
   }
 
-  /// A "Pass and Play" match for 2 to 4 people sharing one device.
+  /// A "Pass and Play" match for 2 to 3 people sharing one device.
   /// [playerNames] are in turn order; the first player moves first.
   factory GameState.newGame({
     required List<String> playerNames,
@@ -397,7 +397,7 @@ class GameState {
     );
   }
 
-  /// A "Play Bot" match: [humanNames] (1 to 3 people, in turn order) plus
+  /// A "Play Bot" match: [humanNames] (1 to 2 people, in turn order) plus
   /// the computer, who is always the last player. The first human moves
   /// first unless [computerStarts] is true.
   factory GameState.newComputerGame({
@@ -468,7 +468,7 @@ class GameState {
   }
 
   factory GameState.fromJson(Map<String, dynamic> json) {
-    // Saves from before 3-4 player support only have the two-player keys.
+    // Saves from before 3-player support only have the two-player keys.
     final namesJson = json['playerNames'] as List<dynamic>?;
     final List<String> names = namesJson != null
         ? namesJson.map((e) => e.toString()).toList()

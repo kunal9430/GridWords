@@ -1,5 +1,5 @@
 name: grid_word_game
-description: Grid Words — a word grid game for up to 4 players with persistent letter and score palettes.
+description: Grid Words — a word grid game for up to 3 players with persistent letter and score palettes.
 publish_to: 'none'
 version: 1.0.0+1
 

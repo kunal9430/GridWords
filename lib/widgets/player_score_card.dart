@@ -19,7 +19,7 @@ class PlayerScoreCard extends StatelessWidget {
   final VoidCallback? onCardTap;
   final Color accentColor;
 
-  /// Slimmer layout used when 3 or 4 players share the scoreboard row.
+  /// Slimmer layout used when 3 players share the scoreboard row.
   final bool compact;
 
   const PlayerScoreCard({

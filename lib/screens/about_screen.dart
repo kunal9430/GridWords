@@ -33,7 +33,7 @@ class AboutScreen extends StatelessWidget {
             index: 1,
             child: GWCard(
               child: Text(
-                'A customizable word grid game for up to four players, with auto-calculated word lengths, '
+                'A customizable word grid game for up to three players, with auto-calculated word lengths, '
                 'a computer opponent, and saved games you can pick up any time.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15, height: 1.5, color: scheme.onSurface.withOpacity(0.85)),
@@ -49,7 +49,7 @@ class AboutScreen extends StatelessWidget {
                 children: const [
                   _Feature(Icons.grid_view_rounded, 'Custom grids', 'Any board from 1 × 2 up to 10 × 10'),
                   SizedBox(height: 14),
-                  _Feature(Icons.people_alt_rounded, 'Up to 4 players', 'Pass and Play with friends, or add the Bot'),
+                  _Feature(Icons.people_alt_rounded, 'Up to 3 players', 'Pass and Play with friends, or add the Bot'),
                   SizedBox(height: 14),
                   _Feature(Icons.smart_toy_rounded, 'Play Bot', 'Four levels, from Easy to Expert'),
                   SizedBox(height: 14),
