@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../config/app_links.dart';
 import '../models/game_state.dart';
+import 'auth_service.dart';
 
 /// Thrown for any problem talking to the online database.
 class OnlineException implements Exception {
@@ -15,7 +16,13 @@ class OnlineException implements Exception {
 
 /// The waiting room of an online match, before the board exists.
 class Lobby {
+  /// Display names in seat order (the host is first).
   final List<String> players;
+
+  /// Who sits where: login user id -> 0-based seat. This is the record of
+  /// who was in the match from the start; it is what lets a player who left
+  /// come back with the room code, even after the game has started.
+  final Map<String, int> members;
   final int maxPlayers;
   final int rows;
   final int cols;
@@ -23,22 +30,50 @@ class Lobby {
 
   const Lobby({
     required this.players,
+    this.members = const {},
     required this.maxPlayers,
     required this.rows,
     required this.cols,
     required this.started,
   });
 
-  factory Lobby.fromJson(Map<String, dynamic> j) => Lobby(
-        players: (j['players'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList(),
-        maxPlayers: j['max'] as int? ?? 3,
-        rows: j['rows'] as int? ?? 5,
-        cols: j['cols'] as int? ?? 5,
-        started: j['started'] as bool? ?? false,
+  factory Lobby.fromJson(Map<String, dynamic> j) {
+    final rawMembers = j['members'];
+    final members = <String, int>{};
+    if (rawMembers is Map) {
+      rawMembers.forEach((k, v) {
+        final seat = v is int ? v : int.tryParse(v.toString());
+        if (seat != null) members[k.toString()] = seat;
+      });
+    }
+    return Lobby(
+      players: (j['players'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList(),
+      members: members,
+      maxPlayers: j['max'] as int? ?? 3,
+      rows: j['rows'] as int? ?? 5,
+      cols: j['cols'] as int? ?? 5,
+      started: j['started'] as bool? ?? false,
+    );
+  }
+
+  /// 0-based seat of the player with login id [uid], or -1 if they were
+  /// never part of this room.
+  int seatOf(String uid) => members[uid] ?? -1;
+
+  bool hasMember(String uid) => members.containsKey(uid);
+
+  Lobby copyWith({List<String>? players, Map<String, int>? members, bool? started}) => Lobby(
+        players: players ?? this.players,
+        members: members ?? this.members,
+        maxPlayers: maxPlayers,
+        rows: rows,
+        cols: cols,
+        started: started ?? this.started,
       );
 
   Map<String, dynamic> toJson() => {
         'players': players,
+        'members': members,
         'max': maxPlayers,
         'rows': rows,
         'cols': cols,
@@ -56,7 +91,7 @@ class RemoteGame {
 
 /// Talks to a Firebase Realtime Database over its plain REST API - no
 /// native Firebase setup needed. Layout:
-///   rooms/CODE/lobby -> {players, max, rows, cols, started}
+///   rooms/CODE/lobby -> {players, members, max, rows, cols, started}
 ///   rooms/CODE/game  -> {rev, by, state}
 /// Concurrent edits are made safe with the database's ETag / If-Match
 /// support: a write based on an out-of-date version is rejected.
@@ -64,7 +99,12 @@ class OnlineService {
   final http.Client _client;
   final String baseUrl;
 
-  OnlineService({http.Client? client, String? baseUrl})
+  /// [tokenProvider] supplies the signed-in player's Firebase ID token, sent
+  /// as `?auth=` so the database rules can identify the caller. Leave it
+  /// null only for an open (rules-free) test database.
+  final Future<String?> Function()? tokenProvider;
+
+  OnlineService({http.Client? client, String? baseUrl, this.tokenProvider})
       : _client = client ?? http.Client(),
         baseUrl = (baseUrl ?? AppLinks.firebaseDbUrl).replaceAll(RegExp(r'/+$'), '');
 
@@ -82,7 +122,16 @@ class OnlineService {
     );
   }
 
-  Uri _uri(String path) => Uri.parse('$baseUrl/rooms/$path.json');
+  Future<Uri> _uri(String path) async {
+    String? token;
+    try {
+      token = await tokenProvider?.call();
+    } on AuthException catch (e) {
+      throw OnlineException(e.message);
+    }
+    final base = Uri.parse('$baseUrl/$path.json');
+    return token == null ? base : base.replace(queryParameters: {'auth': token});
+  }
 
   void _ensureConfigured() {
     if (!configured) {
@@ -102,9 +151,10 @@ class OnlineService {
   }
 
   Future<({Object? body, String? etag})> _get(String path) async {
-    final res = await _send(() => _client.get(_uri(path), headers: {'X-Firebase-ETag': 'true'}));
+    final uri = await _uri(path);
+    final res = await _send(() => _client.get(uri, headers: {'X-Firebase-ETag': 'true'}));
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw const OnlineException('The online database refused access. Its rules must allow read and write.');
+      throw const OnlineException('The online database refused access. Sign in again, or check that the database rules are published (docs/online-play.md).');
     }
     if (res.statusCode != 200) throw OnlineException('Server error (${res.statusCode}).');
     return (body: jsonDecode(res.body), etag: res.headers['etag']);
@@ -117,10 +167,11 @@ class OnlineService {
       'X-Firebase-ETag': 'true',
       if (etag != null) 'if-match': etag,
     };
-    final res = await _send(() => _client.put(_uri(path), headers: headers, body: jsonEncode(value)));
+    final uri = await _uri(path);
+    final res = await _send(() => _client.put(uri, headers: headers, body: jsonEncode(value)));
     if (res.statusCode == 412) return (ok: false, etag: null);
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw const OnlineException('The online database refused access. Its rules must allow read and write.');
+      throw const OnlineException('The online database refused access. Sign in again, or check that the database rules are published (docs/online-play.md).');
     }
     if (res.statusCode != 200) throw OnlineException('Server error (${res.statusCode}).');
     return (ok: true, etag: res.headers['etag']);
@@ -130,9 +181,11 @@ class OnlineService {
   // Lobby
   // ----------------------------------------------------------------------
 
-  /// Opens a new room with [hostName] as the first player and returns its code.
+  /// Opens a new room with [hostName] (signed in as [hostUid]) as the first
+  /// player and returns its code.
   Future<String> createRoom({
     required String hostName,
+    required String hostUid,
     required int maxPlayers,
     required int rows,
     required int cols,
@@ -140,11 +193,18 @@ class OnlineService {
     _ensureConfigured();
     for (var attempt = 0; attempt < 5; attempt++) {
       final code = randomCode();
-      final existing = await _get('$code/lobby');
+      final existing = await _get('rooms/$code/lobby');
       if (existing.body != null) continue; // code already taken
-      final lobby = Lobby(players: [hostName], maxPlayers: maxPlayers, rows: rows, cols: cols, started: false);
+      final lobby = Lobby(
+        players: [hostName],
+        members: {hostUid: 0},
+        maxPlayers: maxPlayers,
+        rows: rows,
+        cols: cols,
+        started: false,
+      );
       // "null" etag means: only write if nothing exists there yet.
-      final res = await _put('$code/lobby', lobby.toJson(), etag: 'null_etag');
+      final res = await _put('rooms/$code/lobby', lobby.toJson(), etag: 'null_etag');
       if (res.ok) return code;
     }
     throw const OnlineException("Couldn't create a room. Please try again.");
@@ -152,54 +212,57 @@ class OnlineService {
 
   Future<Lobby?> fetchLobby(String code) async {
     _ensureConfigured();
-    final r = await _get('$code/lobby');
+    final r = await _get('rooms/$code/lobby');
     if (r.body == null) return null;
     return Lobby.fromJson(Map<String, dynamic>.from(r.body! as Map));
   }
 
-  /// Adds [name] to the room and returns the lobby. Safe when several
-  /// people join at once: a clashing write is retried on the fresh lobby.
-  Future<Lobby> joinRoom(String code, String name) async {
+  /// Puts the signed-in player [uid] into the room and returns the lobby.
+  ///
+  /// * A player who is ALREADY in the room's member list gets back in at
+  ///   their original seat, whether or not the game has started and even if
+  ///   the room is full - leaving never costs anyone their place.
+  /// * A new player can only join before the game starts, and only while
+  ///   there is a free seat.
+  ///
+  /// Safe when several people join at once: a clashing write is retried on
+  /// the fresh lobby.
+  Future<Lobby> joinRoom(String code, String name, String uid) async {
     _ensureConfigured();
     for (var attempt = 0; attempt < 6; attempt++) {
-      final r = await _get('$code/lobby');
+      final r = await _get('rooms/$code/lobby');
       if (r.body == null) throw const OnlineException('No room with that code.');
       final lobby = Lobby.fromJson(Map<String, dynamic>.from(r.body! as Map));
-      if (lobby.started) throw const OnlineException('That game has already started.');
+      if (lobby.hasMember(uid)) return lobby; // re-joining: nothing to write
+      if (lobby.started) {
+        throw const OnlineException('That game has already started, and you were not one of its players.');
+      }
       if (lobby.players.length >= lobby.maxPlayers) throw const OnlineException('That room is full.');
-      final updated = Lobby(
+      final updated = lobby.copyWith(
         players: [...lobby.players, name],
-        maxPlayers: lobby.maxPlayers,
-        rows: lobby.rows,
-        cols: lobby.cols,
-        started: false,
+        members: {...lobby.members, uid: lobby.players.length},
       );
-      final res = await _put('$code/lobby', updated.toJson(), etag: r.etag);
+      final res = await _put('rooms/$code/lobby', updated.toJson(), etag: r.etag);
       if (res.ok) return updated;
     }
     throw const OnlineException("Couldn't join - the room is busy. Please try again.");
   }
 
   /// Host: creates the shared board from the lobby and marks the room started.
-  Future<GameState> startGame(String code) async {
+  /// When [byUid] is given it must be the host's (seat 1) login id.
+  Future<GameState> startGame(String code, {String? byUid}) async {
     _ensureConfigured();
     final lobby = await fetchLobby(code);
     if (lobby == null) throw const OnlineException('The room no longer exists.');
+    if (byUid != null && lobby.members.isNotEmpty && lobby.seatOf(byUid) != 0) {
+      throw const OnlineException('Only the host can start the game.');
+    }
     if (lobby.players.length < GameState.minPlayers) {
       throw const OnlineException('At least 2 players are needed to start.');
     }
     final game = GameState.newGame(playerNames: lobby.players, rows: lobby.rows, cols: lobby.cols)..id = 'online_$code';
-    await _put('$code/game', {'rev': 1, 'by': 'host', 'state': game.toJson()});
-    await _put(
-      '$code/lobby',
-      Lobby(
-        players: lobby.players,
-        maxPlayers: lobby.maxPlayers,
-        rows: lobby.rows,
-        cols: lobby.cols,
-        started: true,
-      ).toJson(),
-    );
+    await _put('rooms/$code/game', {'rev': 1, 'by': 'host', 'state': game.toJson()});
+    await _put('rooms/$code/lobby', lobby.copyWith(started: true).toJson());
     return game;
   }
 
@@ -209,7 +272,7 @@ class OnlineService {
 
   Future<RemoteGame?> fetchGame(String code) async {
     _ensureConfigured();
-    final r = await _get('$code/game');
+    final r = await _get('rooms/$code/game');
     if (r.body == null) return null;
     final m = Map<String, dynamic>.from(r.body! as Map);
     final stateJson = Map<String, dynamic>.from(m['state'] as Map);
@@ -227,7 +290,7 @@ class OnlineService {
     required String by,
   }) {
     _ensureConfigured();
-    return _put('$code/game', {'rev': rev, 'by': by, 'state': state.toJson()}, etag: etag);
+    return _put('rooms/$code/game', {'rev': rev, 'by': by, 'state': state.toJson()}, etag: etag);
   }
 
   void close() => _client.close();
@@ -238,7 +301,10 @@ class OnlineLink {
   final String code;
   final OnlineService service;
   final int rev;
-  const OnlineLink({required this.code, required this.service, required this.rev});
+
+  /// This device's player: 1-based seat number on the shared board.
+  final int mySeat;
+  const OnlineLink({required this.code, required this.service, required this.rev, required this.mySeat});
 }
 
 /// A device's live link to one online match: polls for other players'

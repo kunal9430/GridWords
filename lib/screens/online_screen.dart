@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../config/app_links.dart';
 import '../models/game_state.dart';
+import '../services/auth_service.dart';
+import '../services/cloud_profile_service.dart';
 import '../services/online_service.dart';
 import '../services/profile_service.dart';
 import '../widgets/gw_kit.dart';
@@ -26,7 +28,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
   final _codeController = TextEditingController();
   final _rowsController = TextEditingController(text: '5');
   final _colsController = TextEditingController(text: '5');
-  final OnlineService _service = OnlineService();
+  final OnlineService _service = OnlineService(tokenProvider: AuthService.instance.idToken);
 
   bool _creating = true;
   int _maxPlayers = 2;
@@ -37,8 +39,120 @@ class _OnlineScreenState extends State<OnlineScreen> {
   void initState() {
     super.initState();
     ProfileService.loadDisplayName().then((n) {
-      if (mounted && n.isNotEmpty && _nameController.text.isEmpty) _nameController.text = n;
+      if (!mounted || _nameController.text.isNotEmpty) return;
+      final fallback = AuthService.instance.user.value?.displayName ?? '';
+      final name = n.isNotEmpty ? n : fallback;
+      if (name.isNotEmpty) {
+        _nameController.text = name.length > _maxNameLength ? name.substring(0, _maxNameLength) : name;
+      }
     });
+  }
+
+  bool _signingIn = false;
+
+  Future<void> _signIn() async {
+    setState(() {
+      _signingIn = true;
+      _error = null;
+    });
+    try {
+      final user = await CloudProfileService.signInAndSync();
+      if (user != null && mounted && _nameController.text.isEmpty) {
+        final n = await ProfileService.loadDisplayName();
+        final name = n.isNotEmpty ? n : user.displayName;
+        if (mounted && name.isNotEmpty) {
+          _nameController.text = name.length > _maxNameLength ? name.substring(0, _maxNameLength) : name;
+        }
+      }
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    await AuthService.instance.signOut();
+  }
+
+  /// Shown instead of the room form until the player signs in with Google.
+  Widget _buildSignedOut() {
+    final scheme = Theme.of(context).colorScheme;
+    final auth = AuthService.instance;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GWCard(
+            child: Column(
+              children: [
+                Icon(Icons.account_circle_rounded, size: 56, color: scheme.primary),
+                const SizedBox(height: 10),
+                const Text('Sign in to play online', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                Text(
+                  'Your Google account keeps your seat in a match, so you can leave and come back with the room '
+                  'code at any time. Pass and Play and Play Bot never need an account.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13.5, height: 1.4, color: scheme.onSurface.withOpacity(0.7)),
+                ),
+              ],
+            ),
+          ),
+          if (!auth.configured) ...[
+            const SizedBox(height: 14),
+            GWCard(
+              borderColor: Colors.orange,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Google sign-in has not been set up in this build yet. The app owner needs to set '
+                      'AppLinks.firebaseApiKey and AppLinks.googleServerClientId (see docs/online-play.md).',
+                      style: TextStyle(fontSize: 13, height: 1.4, color: scheme.onSurface.withOpacity(0.8)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          ],
+          const SizedBox(height: 20),
+          GWGradientButton(
+            label: _signingIn ? 'SIGNING IN…' : 'SIGN IN WITH GOOGLE',
+            icon: Icons.login_rounded,
+            height: 56,
+            onPressed: (_signingIn || !auth.configured) ? null : _signIn,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountRow(AuthUser user) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(Icons.verified_user_rounded, size: 18, color: scheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            user.email.isNotEmpty ? user.email : 'Signed in',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: scheme.onSurface.withOpacity(0.7)),
+          ),
+        ),
+        TextButton(onPressed: _busy ? null : _signOut, child: const Text('Sign out')),
+      ],
+    );
   }
 
   @override
@@ -64,6 +178,11 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final user = AuthService.instance.user.value;
+    if (user == null) {
+      setState(() => _error = 'Please sign in with Google first.');
+      return;
+    }
     final name = _nameController.text.trim();
     setState(() {
       _busy = true;
@@ -71,21 +190,34 @@ class _OnlineScreenState extends State<OnlineScreen> {
     });
     try {
       final String code;
+      final bool isHost;
       if (_creating) {
         final rows = int.parse(_rowsController.text.trim());
         final cols = int.parse(_colsController.text.trim());
         if (rows == 1 && cols == 1) {
           throw const OnlineException('Rows and Columns cannot both be 1.');
         }
-        code = await _service.createRoom(hostName: name, maxPlayers: _maxPlayers, rows: rows, cols: cols);
+        code = await _service.createRoom(
+          hostName: name,
+          hostUid: user.uid,
+          maxPlayers: _maxPlayers,
+          rows: rows,
+          cols: cols,
+        );
+        isHost = true;
       } else {
         code = OnlineService.normalizeCode(_codeController.text);
-        await _service.joinRoom(code, name);
+        // A player who was already in this room (even after it started) is
+        // put straight back in their old seat; anyone else needs a free seat.
+        final lobby = await _service.joinRoom(code, name, user.uid);
+        isHost = lobby.seatOf(user.uid) == 0;
       }
       if (!mounted) return;
       await Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => OnlineLobbyScreen(code: code, service: _service, isHost: _creating)),
+        MaterialPageRoute(
+          builder: (_) => OnlineLobbyScreen(code: code, service: _service, isHost: isHost, myUid: user.uid),
+        ),
       );
     } on OnlineException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -99,13 +231,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
     final scheme = Theme.of(context).colorScheme;
     return GWScaffold(
       title: 'Play Online',
-      body: SingleChildScrollView(
+      body: ValueListenableBuilder<AuthUser?>(
+        valueListenable: AuthService.instance.user,
+        builder: (context, user, _) {
+          if (user == null) return _buildSignedOut();
+          return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              _buildAccountRow(user),
+              const SizedBox(height: 4),
               if (!_service.configured) ...[
                 GWCard(
                   borderColor: Colors.orange,
@@ -290,6 +428,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
             ],
           ),
         ),
+      );
+        },
       ),
     );
   }
@@ -302,7 +442,17 @@ class OnlineLobbyScreen extends StatefulWidget {
   final OnlineService service;
   final bool isHost;
 
-  const OnlineLobbyScreen({super.key, required this.code, required this.service, required this.isHost});
+  /// The signed-in player's login id - their seat in the match is looked up
+  /// from it, so re-joining always lands in the original seat.
+  final String myUid;
+
+  const OnlineLobbyScreen({
+    super.key,
+    required this.code,
+    required this.service,
+    required this.isHost,
+    required this.myUid,
+  });
 
   @override
   State<OnlineLobbyScreen> createState() => _OnlineLobbyScreenState();
@@ -354,6 +504,12 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     try {
       final remote = await widget.service.fetchGame(widget.code);
       if (!mounted) return;
+      final seat = (_lobby?.seatOf(widget.myUid) ?? -1) + 1;
+      if (seat < 1) {
+        _opening = false;
+        setState(() => _error = 'You are not one of the players in this game.');
+        return;
+      }
       if (remote == null) {
         _opening = false; // not written yet; the next poll retries
         _timer = Timer.periodic(const Duration(milliseconds: 1500), (_) => _refresh());
@@ -364,7 +520,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         MaterialPageRoute(
           builder: (_) => GameScreen(
             gameState: remote.state,
-            online: OnlineLink(code: widget.code, service: widget.service, rev: remote.rev),
+            online: OnlineLink(code: widget.code, service: widget.service, rev: remote.rev, mySeat: seat),
           ),
         ),
       );
@@ -383,7 +539,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       _error = null;
     });
     try {
-      await widget.service.startGame(widget.code);
+      await widget.service.startGame(widget.code, byUid: widget.myUid);
       await _refresh(); // sees started == true and opens the board
     } on OnlineException catch (e) {
       if (mounted) setState(() => _error = e.message);

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:characters/characters.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/cloud_profile_service.dart';
 import '../services/profile_service.dart';
 import '../widgets/gw_kit.dart';
 
@@ -147,6 +148,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       photoBase64: _photoBase64,
     );
     await ProfileService.saveProfile(updated);
+    CloudProfileService.instance.pushIfSignedIn(updated);
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(

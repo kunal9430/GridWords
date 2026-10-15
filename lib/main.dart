@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
+import 'services/auth_service.dart';
 import 'services/brightness_controller.dart';
 import 'services/profile_service.dart';
 import 'services/theme_controller.dart';
@@ -11,6 +12,7 @@ void main() {
   ThemeController.instance.loadTheme();
   BrightnessController.instance.load();
   ProfileService.init();
+  AuthService.instance.init(); // restores a previous Google login, if any
   runApp(const GridWordGameApp());
 }
 

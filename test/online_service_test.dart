@@ -38,11 +38,14 @@ void main() {
     final host = newService(client);
     final guest = newService(client);
 
-    final code = await host.createRoom(hostName: 'Ann', maxPlayers: 3, rows: 4, cols: 5);
+    final code = await host.createRoom(hostName: 'Ann', hostUid: 'uA', maxPlayers: 3, rows: 4, cols: 5);
     expect(code.length, 6);
 
-    final lobby = await guest.joinRoom(code, 'Bob');
+    final lobby = await guest.joinRoom(code, 'Bob', 'uB');
     expect(lobby.players, ['Ann', 'Bob']);
+    expect(lobby.seatOf('uA'), 0);
+    expect(lobby.seatOf('uB'), 1);
+    expect(lobby.seatOf('nobody'), -1);
 
     final game = await host.startGame(code);
     expect(game.playerNames, ['Ann', 'Bob']);
@@ -58,19 +61,19 @@ void main() {
   test('room full, unknown code and started rooms are refused', () async {
     final client = fakeDatabase();
     final s = newService(client);
-    final code = await s.createRoom(hostName: 'A', maxPlayers: 2, rows: 3, cols: 3);
-    await s.joinRoom(code, 'B');
-    await expectLater(() => s.joinRoom(code, 'C'), throwsA(isA<OnlineException>()));
-    await expectLater(() => s.joinRoom('ZZZZZZ', 'C'), throwsA(isA<OnlineException>()));
+    final code = await s.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 2, rows: 3, cols: 3);
+    await s.joinRoom(code, 'B', 'uB');
+    await expectLater(() => s.joinRoom(code, 'C', 'uC'), throwsA(isA<OnlineException>()));
+    await expectLater(() => s.joinRoom('ZZZZZZ', 'C', 'uC'), throwsA(isA<OnlineException>()));
     await s.startGame(code);
-    await expectLater(() => s.joinRoom(code, 'D'), throwsA(isA<OnlineException>()));
+    await expectLater(() => s.joinRoom(code, 'D', 'uD'), throwsA(isA<OnlineException>()));
   });
 
   test('a stale write is rejected and the newer board is adopted', () async {
     final client = fakeDatabase();
     final a = newService(client);
-    final code = await a.createRoom(hostName: 'A', maxPlayers: 2, rows: 3, cols: 3);
-    await a.joinRoom(code, 'B');
+    final code = await a.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 2, rows: 3, cols: 3);
+    await a.joinRoom(code, 'B', 'uB');
     final g = await a.startGame(code);
 
     final stateA = GameState.decode(g.encode());
@@ -106,6 +109,61 @@ void main() {
     expect(changedA, 1);
     expect(stateA.grid[1][1], 'B');
     expect(jsonDecode(stateA.encode()), isA<Map>());
+  });
+
+  test('a player who was in the room can re-join after the game started', () async {
+    final client = fakeDatabase();
+    final s = newService(client);
+    final code = await s.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 2, rows: 3, cols: 3);
+    await s.joinRoom(code, 'B', 'uB');
+    await s.startGame(code, byUid: 'uA');
+
+    // Both original players can come back, in their original seats,
+    // even though the room is started AND full.
+    final backB = await s.joinRoom(code, 'Bobby', 'uB');
+    expect(backB.seatOf('uB'), 1);
+    expect(backB.players, ['A', 'B'], reason: 're-joining must not add a second seat or rename the player');
+    final backA = await s.joinRoom(code, 'A', 'uA');
+    expect(backA.seatOf('uA'), 0);
+
+    // A stranger is still turned away.
+    await expectLater(() => s.joinRoom(code, 'Eve', 'uE'), throwsA(isA<OnlineException>()));
+  });
+
+  test('a player can re-join a room that has not started without taking a second seat', () async {
+    final client = fakeDatabase();
+    final s = newService(client);
+    final code = await s.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 3, rows: 3, cols: 3);
+    await s.joinRoom(code, 'B', 'uB');
+    final again = await s.joinRoom(code, 'B', 'uB');
+    expect(again.players, ['A', 'B']);
+    final c = await s.joinRoom(code, 'C', 'uC');
+    expect(c.seatOf('uC'), 2);
+  });
+
+  test('only the host can start the game', () async {
+    final client = fakeDatabase();
+    final s = newService(client);
+    final code = await s.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 2, rows: 3, cols: 3);
+    await s.joinRoom(code, 'B', 'uB');
+    await expectLater(() => s.startGame(code, byUid: 'uB'), throwsA(isA<OnlineException>()));
+    expect((await s.fetchLobby(code))!.started, isFalse);
+    await s.startGame(code, byUid: 'uA');
+    expect((await s.fetchLobby(code))!.started, isTrue);
+  });
+
+  test('the sign-in token is sent as ?auth= on every request', () async {
+    final seen = <String>[];
+    final inner = fakeDatabase();
+    final client = MockClient((req) async {
+      seen.add(req.url.queryParameters['auth'] ?? '');
+      return inner.send(req).then(http.Response.fromStream);
+    });
+    final s = OnlineService(client: client, baseUrl: 'https://example.test', tokenProvider: () async => 'tok123');
+    final code = await s.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 2, rows: 3, cols: 3);
+    await s.fetchLobby(code);
+    expect(seen, isNotEmpty);
+    expect(seen.every((a) => a == 'tok123'), isTrue);
   });
 
   test('room codes avoid look-alike characters', () {

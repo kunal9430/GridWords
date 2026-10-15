@@ -16,6 +16,7 @@ import '../services/word_list_service.dart';
 import '../widgets/alphabet_bank.dart';
 import '../widgets/gw_kit.dart';
 import '../widgets/numeric_strip.dart';
+import '../widgets/online_leaderboard.dart';
 import '../widgets/player_score_card.dart';
 import 'setup_screen.dart';
 
@@ -63,6 +64,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   OnlineSession? _online;
   bool _linkUp = true;
 
+  /// This device's player in an online match (1-based seat), else null.
+  int? _mySeat;
+
+  /// In an online match only the player whose turn it is may place letters,
+  /// score or clear cells. A local (pass-and-play / computer) match has one
+  /// shared device, so it is always "your" turn.
+  bool get _isMyTurn => _mySeat == null || (state.currentTurn == _mySeat && !state.isComplete);
+
   /// Sends this device's latest change to the other players.
   void _sync() {
     _online?.push();
@@ -102,6 +111,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     _gameOverDialogShown = state.isComplete;
     final link = widget.online;
     if (link != null) {
+      _mySeat = link.mySeat;
       _online = OnlineSession(
         code: link.code,
         service: link.service,
@@ -147,6 +157,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _onCellTap(int r, int c) {
     if (_isComputersTurn) return; // the board is the computer's this turn
+    if (!_isMyTurn) return; // online: wait for your turn
     // Highlighting a cell is always allowed — even while the Numeric
     // Strip is armed — the Alphabet Bank itself stays disabled until the
     // pallet is closed, so no letter can actually be entered meanwhile.
@@ -397,6 +408,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _onLetterTap(String letter) {
     if (_isComputersTurn) return;
+    if (!_isMyTurn) return;
     if (state.scoringArmed) return;
     if (selectedRow == null || selectedCol == null) return;
     final r = selectedRow!;
@@ -422,6 +434,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// already-active direction again toggles the pallet back off.
   void _setScoreDirection(int playerNumber, bool addMode) {
     if (state.currentTurn != playerNumber || state.isComplete) return;
+    if (_mySeat != null && playerNumber != _mySeat) return; // online: only your own card
     if (state.isComputerSeat(playerNumber)) return; // never score for the computer by hand
     setState(() {
       if (state.scoringArmed && state.isAddMode == addMode) {
@@ -436,6 +449,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _onNumberTap(int number) {
     if (!state.scoringArmed) return; // only active once armed
+    if (!_isMyTurn) return;
     setState(() {
       final delta = state.isAddMode ? number : -number;
       // Clear the active highlight.
@@ -462,6 +476,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// pallet again rather than being blocked by it.
   void _switchTurn(int playerNumber) {
     if (state.isComplete) return;
+    if (_mySeat != null) return; // online: the turn passes only when the scorer scores
     // The computer's seat is never handed over by hand, and its turn can't
     // be interrupted.
     if (state.isComputerSeat(playerNumber) || state.isComputerSeat(state.currentTurn)) return;
@@ -635,6 +650,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _clearSelected() {
     if (_aiBusy || _isComputersTurn) return;
+    if (!_isMyTurn) return;
     if (selectedRow == null || selectedCol == null) return;
     final r = selectedRow!;
     final c = selectedCol!;
@@ -1025,6 +1041,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget _buildBottomPanel() {
     if (state.isComplete) return _buildGameOverPanel();
     final bankEnabled = !_isComputersTurn &&
+        _isMyTurn &&
         !state.scoringArmed &&
         selectedRow != null &&
         selectedCol != null &&
@@ -1032,7 +1049,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return AlphabetBank(onLetterTap: _onLetterTap, enabled: bankEnabled);
   }
 
-  Widget _buildPlayerCard(int seat, {required bool compact}) {
+  Widget _buildPlayerCard(int seat, {required bool compact, bool expanded = true}) {
     final isTurn = state.currentTurn == seat;
     // The computer scores itself; its +/- buttons are never available.
     final controlsEnabled = isTurn && !state.isComplete && !state.isComputerSeat(seat);
@@ -1045,27 +1062,62 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       isCurrentTurn: isTurn,
       onAddPressed: () => _setScoreDirection(seat, true),
       onMinusPressed: () => _setScoreDirection(seat, false),
-      onCardTap: state.isComputerSeat(seat) ? null : () => _switchTurn(seat),
+      onCardTap: (state.isComputerSeat(seat) || _mySeat != null) ? null : () => _switchTurn(seat),
       accentColor: GW.playerColor(context, seat - 1),
       compact: compact,
+      expanded: expanded,
+    );
+  }
+
+  /// Online match: only THIS player's score card (30% of the width) beside
+  /// the live leaderboard of everyone's scores (70%). The card's +/- buttons
+  /// work only while it is this player's turn.
+  Widget _buildOnlineScoreRow(int mySeat) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Flexible(
+            flex: 3,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: _buildPlayerCard(mySeat, compact: true, expanded: false),
+            ),
+          ),
+          Flexible(
+            flex: 7,
+            child: OnlineLeaderboard(
+              names: state.playerNames,
+              scores: state.scores,
+              currentTurn: state.currentTurn,
+              mySeat: mySeat,
+              gameOver: state.isComplete,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildScoreboard() {
     final compact = state.playerCount >= 3;
+    final mySeat = _mySeat;
     return Column(
       children: [
-        Row(
-          children: [
-            for (var seat = 1; seat <= state.playerCount; seat++) _buildPlayerCard(seat, compact: compact),
-          ],
-        ),
+        if (mySeat != null && mySeat >= 1 && mySeat <= state.playerCount)
+          _buildOnlineScoreRow(mySeat)
+        else
+          Row(
+            children: [
+              for (var seat = 1; seat <= state.playerCount; seat++) _buildPlayerCard(seat, compact: compact),
+            ],
+          ),
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: NumericStrip(
             maxNumber: state.maxWordLength,
-            enabled: state.scoringArmed,
+            enabled: state.scoringArmed && _isMyTurn,
             onNumberTap: _onNumberTap,
           ),
         ),
@@ -1128,12 +1180,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       child: Row(
         children: [
           _ribbonButton(
-              icon: Icons.delete_sweep, label: 'Board', onPressed: (state.isComplete || _aiBusy) ? null : _clearBoard, color: Colors.red),
+              icon: Icons.delete_sweep, label: 'Board', onPressed: (state.isComplete || _aiBusy || !_isMyTurn) ? null : _clearBoard, color: Colors.red),
           const SizedBox(width: 6),
           _ribbonButton(
               icon: Icons.backspace_outlined,
               label: 'Cell',
-              onPressed: (state.isComplete || _aiBusy) ? null : _clearSelected,
+              onPressed: (state.isComplete || _aiBusy || !_isMyTurn) ? null : _clearSelected,
               color: Colors.orange.shade800),
           const SizedBox(width: 6),
           _ribbonButton(

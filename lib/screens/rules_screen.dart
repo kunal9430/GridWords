@@ -55,11 +55,12 @@ class RulesScreen extends StatelessWidget {
         'The computer only plays the base (1st) form of a verb — walk, build, go — and never the past '
         '(walked, ran), the past participle (gone, broken) or the -ing form (walking, building).'),
     _Rule('11', 'Playing Online', Icons.public_rounded,
-        'Tap "Play Online" on the home screen. One person creates a room and shares its 6-character code; '
-        'up to two friends join with it on their own phones, then the host starts the game. Everyone sees the '
-        'same live board and anyone can place a letter, score or hand over the turn, so agree on whose turn it is '
-        'out loud. If two people act at the same moment, the later action is dropped and the newer board is shown. '
-        'Online games have no computer player.'),
+        'Tap "Play Online" on the home screen and sign in with Google (online play is the only part that needs an '
+        'account). One person creates a room and shares its 6-character code; up to two friends join with it on '
+        'their own phones, then the host starts the game. Your screen shows your own score card beside a live '
+        'leaderboard, and you can place a letter and score only on your turn. If you leave or lose your connection, '
+        'sign in with the same Google account and enter the same code to jump back into your seat, even after the '
+        'game has started. Online games have no computer player.'),
   ];
 
   @override

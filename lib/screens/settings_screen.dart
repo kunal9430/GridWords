@@ -4,6 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../services/backup_service.dart';
 import '../services/brightness_controller.dart';
+import '../services/auth_service.dart';
+import '../services/cloud_profile_service.dart';
 import '../services/profile_service.dart';
 import '../services/theme_controller.dart';
 import '../theme/app_theme.dart';
@@ -174,7 +176,124 @@ class _ProfileTab extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 12),
+        const GWReveal(index: 2, child: _GoogleAccountCard()),
       ],
+    );
+  }
+}
+
+/// Optional Google sign-in: needed for Play Online, and keeps the profile's
+/// name and email in the cloud so a new phone gets them back.
+class _GoogleAccountCard extends StatefulWidget {
+  const _GoogleAccountCard();
+
+  @override
+  State<_GoogleAccountCard> createState() => _GoogleAccountCardState();
+}
+
+class _GoogleAccountCardState extends State<_GoogleAccountCard> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _signIn() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await CloudProfileService.signInAndSync();
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    setState(() => _busy = true);
+    await AuthService.instance.signOut();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final auth = AuthService.instance;
+    return ValueListenableBuilder<AuthUser?>(
+      valueListenable: auth.user,
+      builder: (context, user, _) {
+        return GWCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const GWIconTile(icon: Icons.account_circle_rounded, size: 38),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user == null ? 'Google account' : 'Signed in with Google',
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                        ),
+                        if (user != null && user.email.isNotEmpty)
+                          Text(
+                            user.email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12.5, color: scheme.onSurface.withOpacity(0.65)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                user == null
+                    ? 'Optional. Sign in to play online and to keep your name and email safe in the cloud. '
+                        'Everything else works without an account.'
+                    : 'You can play online, and your name and email are saved to your account.',
+                style: TextStyle(fontSize: 13, height: 1.4, color: scheme.onSurface.withOpacity(0.7)),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ],
+              const SizedBox(height: 12),
+              if (user == null)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: (_busy || !auth.configured) ? null : _signIn,
+                    icon: const Icon(Icons.login_rounded, size: 18),
+                    label: Text(_busy ? 'Signing in…' : 'Sign in with Google'),
+                  ),
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : _signOut,
+                    icon: const Icon(Icons.logout_rounded, size: 18),
+                    label: const Text('Sign out'),
+                  ),
+                ),
+              if (user == null && !auth.configured)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Google sign-in is not set up in this build yet (see docs/online-play.md).',
+                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

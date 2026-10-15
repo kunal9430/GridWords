@@ -22,6 +22,10 @@ class PlayerScoreCard extends StatelessWidget {
   /// Slimmer layout used when 3 players share the scoreboard row.
   final bool compact;
 
+  /// Wrap in [Expanded] (the default, for the scoreboard row). Pass false
+  /// to size the card yourself, e.g. inside a fixed-width box.
+  final bool expanded;
+
   const PlayerScoreCard({
     super.key,
     required this.initials,
@@ -35,6 +39,7 @@ class PlayerScoreCard extends StatelessWidget {
     this.onCardTap,
     this.accentColor = const Color(0xFF5B4FE9),
     this.compact = false,
+    this.expanded = true,
   });
 
   @override
@@ -69,8 +74,7 @@ class PlayerScoreCard extends StatelessWidget {
       ),
     );
 
-    return Expanded(
-      child: GestureDetector(
+    final card = GestureDetector(
         onTap: onCardTap,
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
@@ -191,8 +195,8 @@ class PlayerScoreCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
+      );
+    return expanded ? Expanded(child: card) : card;
   }
 }
 
