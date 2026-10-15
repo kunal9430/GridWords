@@ -27,9 +27,9 @@ class GW {
 
   static bool isDark(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
 
-  /// Accent color for player [index] (0-based, up to 4 players). The first
-  /// two follow the theme (as in a two-player game); seats 3 and 4 use
-  /// fixed teal and orange so all four stay easy to tell apart.
+  /// Accent color for player [index] (0-based, up to 3 players). The first
+  /// two follow the theme (as in a two-player game); seat 3 uses
+  /// a fixed teal so all three stay easy to tell apart.
   static Color playerColor(BuildContext context, int index) {
     final s = Theme.of(context).colorScheme;
     switch (index) {

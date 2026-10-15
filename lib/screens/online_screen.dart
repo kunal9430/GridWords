@@ -199,12 +199,12 @@ class _OnlineScreenState extends State<OnlineScreen> {
                       const GWSectionTitle(
                         icon: Icons.groups_rounded,
                         title: 'Players allowed',
-                        subtitle: 'Up to 4 people can join',
+                        subtitle: 'Up to 3 people can join',
                       ),
                       const SizedBox(height: 14),
                       Row(
                         children: [
-                          for (final n in const [2, 3, 4]) ...[
+                          for (final n in const [2, 3]) ...[
                             Expanded(
                               child: GWChoice(
                                 label: '$n',
@@ -214,7 +214,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
                                 onTap: () => setState(() => _maxPlayers = n),
                               ),
                             ),
-                            if (n != 4) const SizedBox(width: 8),
+                            if (n != 3) const SizedBox(width: 8),
                           ],
                         ],
                       ),
@@ -397,7 +397,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     final scheme = Theme.of(context).colorScheme;
     final lobby = _lobby;
     final count = lobby?.players.length ?? 0;
-    final max = lobby?.maxPlayers ?? 4;
+    final max = lobby?.maxPlayers ?? 3;
     return GWScaffold(
       title: 'Waiting Room',
       body: ListView(

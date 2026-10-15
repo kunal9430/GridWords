@@ -38,7 +38,7 @@ expiry/clean-up job.
 
 ## How it works
 
-* Host taps **Create Room** (name, 2-4 players, board size) and shares the code.
+* Host taps **Create Room** (name, 2-3 players, board size) and shares the code.
 * Friends tap **Join Room**, enter the code and their name.
 * The host taps **Start Game**; every device opens the same board.
 * The board is shared: anyone may place a letter, score or switch turns.

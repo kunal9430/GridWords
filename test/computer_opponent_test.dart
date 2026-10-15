@@ -813,36 +813,35 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  group('Up to four players', () {
+  group('Up to three players', () {
     test('pass and play rotates through every seat and wraps around', () {
-      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy', 'Di'], rows: 3, cols: 3);
-      expect(s.playerCount, 4);
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy'], rows: 3, cols: 3);
+      expect(s.playerCount, 3);
       final seen = <int>[];
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 4; i++) {
         seen.add(s.currentTurn);
         s.applyTurnScore(i + 1);
       }
-      expect(seen, [1, 2, 3, 4, 1]);
-      expect(s.scores, [1 + 5, 2, 3, 4]);
+      expect(seen, [1, 2, 3, 1]);
+      expect(s.scores, [1 + 4, 2, 3]);
     });
 
     test('computer sits in the last seat and moves after every human', () {
       final s = GameState.newComputerGame(
-        humanNames: ['Ann', 'Bob', 'Cy'],
+        humanNames: ['Ann', 'Bob'],
         rows: 3,
         cols: 3,
         difficulty: AiDifficulty.easy,
       );
-      expect(s.playerCount, 4);
-      expect(s.computerSeat, 4);
+      expect(s.playerCount, 3);
+      expect(s.computerSeat, 3);
       expect(s.playerInitials.last, '🤖 CPU');
       expect(s.isComputerTurn, isFalse);
       s.applyTurnScore(1);
-      s.applyTurnScore(1);
-      expect(s.currentTurn, 3);
+      expect(s.currentTurn, 2);
       expect(s.isComputerTurn, isFalse);
       s.applyTurnScore(1);
-      expect(s.currentTurn, 4);
+      expect(s.currentTurn, 3);
       expect(s.isComputerTurn, isTrue);
     });
 
@@ -889,13 +888,13 @@ void main() {
       expect(s.leaders, [2]);
     });
 
-    test('3-4 player saves round-trip and old two-player saves still load', () {
-      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy', 'Di'], rows: 3, cols: 3)
-        ..scores = [1, 2, 3, 4]
+    test('3-player saves round-trip and old two-player saves still load', () {
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy'], rows: 3, cols: 3)
+        ..scores = [1, 2, 3]
         ..currentTurn = 3;
       final loaded = GameState.decode(s.encode());
-      expect(loaded.playerNames, ['Ann', 'Bob', 'Cy', 'Di']);
-      expect(loaded.scores, [1, 2, 3, 4]);
+      expect(loaded.playerNames, ['Ann', 'Bob', 'Cy']);
+      expect(loaded.scores, [1, 2, 3]);
       expect(loaded.currentTurn, 3);
 
       final legacy = s.toJson()
@@ -908,7 +907,7 @@ void main() {
       expect(old.scores, [1, 2]);
     });
 
-    test('labels are unique for up to four players', () {
+    test('labels are unique for several players', () {
       for (final names in [
         ['Kunal Kumar', 'Kunal Kapoor', 'Kara Knight', 'Kunal Kumar'],
         ['Sam', 'Sam', 'Sam', 'Sam'],

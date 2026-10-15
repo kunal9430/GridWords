@@ -21,7 +21,7 @@ class _SetupScreenState extends State<SetupScreen> {
   static const int _maxDimension = 10;
 
   final _formKey = GlobalKey<FormState>();
-  // One name field per possible seat (a match has 2 to 4 players).
+  // One name field per possible seat (a match has 2 to 3 players).
   final List<TextEditingController> _nameControllers =
       List.generate(GameState.maxPlayers, (_) => TextEditingController());
   final TextEditingController _rowsController = TextEditingController();
@@ -32,7 +32,7 @@ class _SetupScreenState extends State<SetupScreen> {
 
   // "Play Bot": the last seat becomes the computer.
   bool _vsComputer = false;
-  // Total players in the match, INCLUDING the computer in a bot match (2-4).
+  // Total players in the match, INCLUDING the computer in a bot match (2-3).
   int _playerCount = 2;
   int get _humanCount => _vsComputer ? _playerCount - 1 : _playerCount;
   AiDifficulty _difficulty = AiDifficulty.medium;
@@ -194,10 +194,10 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  /// "How many players?" - 2 to 4 in total. In a bot match the computer
+  /// "How many players?" - 2 or 3 in total. In a bot match the computer
   /// takes the last seat, so the choices count the humans only.
   Widget _buildPlayerCountCard() {
-    final humanChoices = _vsComputer ? const [1, 2, 3] : const [2, 3, 4];
+    final humanChoices = _vsComputer ? const [1, 2] : const [2, 3];
     return GWCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,7 +205,7 @@ class _SetupScreenState extends State<SetupScreen> {
           GWSectionTitle(
             icon: Icons.groups_rounded,
             title: 'How many players?',
-            subtitle: _vsComputer ? 'Up to 4 in total, with the Computer' : 'Up to 4 people',
+            subtitle: _vsComputer ? 'Up to 3 in total, with the Computer' : 'Up to 3 people',
           ),
           const SizedBox(height: 14),
           Row(

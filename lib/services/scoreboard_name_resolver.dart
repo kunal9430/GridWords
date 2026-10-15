@@ -61,7 +61,7 @@ class ScoreboardNameResolver {
     return ResolvedNames(player1Label: '${label1}1', player2Label: '${label2}2');
   }
 
-  /// Resolves a label for each of 2-4 (or more) players at once, in order,
+  /// Resolves a label for each of 2-3 (or more) players at once, in order,
   /// guaranteeing no two labels are identical. Two players use the exact
   /// same rules as [resolve]; larger groups first try a richer label for
   /// each colliding name and finally fall back to a numeric suffix.

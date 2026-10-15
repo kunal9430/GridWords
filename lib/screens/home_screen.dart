@@ -118,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           0.5,
                           _ModeCard(
                             title: 'Pass and Play',
-                            subtitle: 'Pass the phone around · 2 to 4 players',
+                            subtitle: 'Pass the phone around · 2 or 3 players',
                             icon: Icons.people_alt_rounded,
                             colors: [primary, Color.lerp(primary, tertiary, 0.35)!],
                             onTap: () => _open(const SetupScreen()),
@@ -193,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       case _MenuAction.share:
         Share.share(
           '🎮 Check out Grid Words! A fun word-building board game '
-          'you can play with up to 3 friends or against the computer — build words on a custom grid '
+          'you can play with up to 2 friends or against the computer — build words on a custom grid '
           'and keep score as you play.\n\n'
           'Get it here: ${AppLinks.downloadUrl}',
           subject: 'Grid Words',
