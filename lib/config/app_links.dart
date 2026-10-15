@@ -12,12 +12,13 @@ class AppLinks {
   static const String playStoreUrl = downloadUrl;
 
   /// Shown in the profile menu's Help item.
-  static const String supportEmail = 'gridgamesplay@gmail.com';
+  static const String supportEmail = 'gridgamesplay1@gmail.com';
 
   /// Base URL of your Firebase Realtime Database, used for "Play Online".
   /// Create a free project at https://console.firebase.google.com, add a
   /// Realtime Database, and paste its URL here WITHOUT a trailing slash, e.g.
   /// `https://grid-words-12345-default-rtdb.firebaseio.com`.
   /// Leave empty to hide online play's connection (the screen will explain).
-  static const String firebaseDbUrl = '';
+  static const String firebaseDbUrl =
+      'https://grid-words-e564c-default-rtdb.asia-southeast1.firebasedatabase.app';
 }
