@@ -8,7 +8,7 @@ class AboutScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return GWScaffold(
-      title: 'About',
+      title: 'About Us',
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
@@ -33,8 +33,8 @@ class AboutScreen extends StatelessWidget {
             index: 1,
             child: GWCard(
               child: Text(
-                'A customizable two-player word grid game featuring auto-calculated word lengths, '
-                'persistent letter and score palettes, and local state persistence.',
+                'A customizable word grid game for up to four players, with auto-calculated word lengths, '
+                'a computer opponent, and saved games you can pick up any time.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15, height: 1.5, color: scheme.onSurface.withOpacity(0.85)),
               ),
@@ -49,7 +49,9 @@ class AboutScreen extends StatelessWidget {
                 children: const [
                   _Feature(Icons.grid_view_rounded, 'Custom grids', 'Any board from 1 × 2 up to 10 × 10'),
                   SizedBox(height: 14),
-                  _Feature(Icons.smart_toy_rounded, 'Play the computer', 'Four levels, from Easy to Expert'),
+                  _Feature(Icons.people_alt_rounded, 'Up to 4 players', 'Pass and Play with friends, or add the Bot'),
+                  SizedBox(height: 14),
+                  _Feature(Icons.smart_toy_rounded, 'Play Bot', 'Four levels, from Easy to Expert'),
                   SizedBox(height: 14),
                   _Feature(Icons.folder_open_rounded, 'Saved games', 'Pick any match up where you left it'),
                   SizedBox(height: 14),

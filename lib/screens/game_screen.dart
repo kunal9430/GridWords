@@ -4,11 +4,13 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../ai/computer_turn.dart';
 import '../config/app_links.dart';
 import '../models/game_state.dart';
+import '../services/online_service.dart';
 import '../services/storage_service.dart';
 import '../services/word_list_service.dart';
 import '../widgets/alphabet_bank.dart';
@@ -19,7 +21,11 @@ import 'setup_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final GameState gameState;
-  const GameScreen({super.key, required this.gameState});
+
+  /// Set for an online match: the board is then shared live with the other
+  /// devices in the room.
+  final OnlineLink? online;
+  const GameScreen({super.key, required this.gameState, this.online});
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -53,7 +59,33 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   bool _aiBusy = false;
   int _aiToken = 0;
 
-  bool get _isComputersTurn => state.vsComputer && state.currentTurn == 2;
+  // Online play: live link to the other devices (null for a local match).
+  OnlineSession? _online;
+  bool _linkUp = true;
+
+  /// Sends this device's latest change to the other players.
+  void _sync() {
+    _online?.push();
+  }
+
+  /// Another player's newer board has just been copied into [state].
+  void _onRemoteChange() {
+    if (!mounted) return;
+    setState(() {
+      if (state.scoringArmed && state.pendingRow != null && state.pendingCol != null) {
+        selectedRow = state.pendingRow;
+        selectedCol = state.pendingCol;
+      } else if (selectedRow != null &&
+          (selectedRow! >= state.rows || selectedCol! >= state.cols)) {
+        selectedRow = null;
+        selectedCol = null;
+      }
+      if (!state.isComplete) _gameOverDialogShown = false;
+    });
+    _maybeShowGameOverDialog();
+  }
+
+  bool get _isComputersTurn => state.isComputerSeat(state.currentTurn);
 
   // Wraps the visible game area (scoreboard + grid + bottom panel) so
   // "Share" can capture exactly what the player currently sees as an image.
@@ -68,6 +100,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       selectedCol = state.pendingCol;
     }
     _gameOverDialogShown = state.isComplete;
+    final link = widget.online;
+    if (link != null) {
+      _online = OnlineSession(
+        code: link.code,
+        service: link.service,
+        state: state,
+        initialRev: link.rev,
+        onRemoteChange: _onRemoteChange,
+        onStatus: (up) {
+          if (mounted) setState(() => _linkUp = up);
+        },
+      )..start();
+    }
     WidgetsBinding.instance.addObserver(this);
     // Resuming a saved computer match that was left on the computer's turn.
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRunComputerTurn());
@@ -77,6 +122,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _aiToken++; // discard any in-flight computer move
+    _online?.dispose();
     _bannerTimer?.cancel();
     _usedWordsScrollController.dispose();
     super.dispose();
@@ -87,7 +133,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// ever saved if the player explicitly taps Save.
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
-    if (state.isComplete) return;
+    if (state.isComplete || _online != null) return; // online matches live in the room, not on disk
     if (lifecycleState == AppLifecycleState.inactive ||
         lifecycleState == AppLifecycleState.paused ||
         lifecycleState == AppLifecycleState.detached) {
@@ -161,6 +207,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       return;
     }
     setState(() => state.addUsedWord(word));
+    _sync();
     _showTopBanner(word, isWarning: false);
   }
 
@@ -202,6 +249,39 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   final ScrollController _usedWordsScrollController = ScrollController();
 
+  void _showRoomCode() {
+    final code = _online?.code ?? '';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Room code'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SelectableText(
+              code,
+              style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: 4),
+            ),
+            const SizedBox(height: 8),
+            const Text('Friends can join from the lobby with this code before the game starts.',
+                textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          ElevatedButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: code));
+              Navigator.pop(ctx);
+            },
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copy'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showUsedWordsDialog() {
     showDialog<void>(
       context: context,
@@ -211,6 +291,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             void deleteWord(String word) {
               setDialogState(() => state.usedWords.remove(word));
               setState(() {}); // keep the main screen's copy in sync too
+              _sync();
             }
 
             return AlertDialog(
@@ -328,6 +409,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       state.pendingCol = c;
       state.scoringArmed = true;
     });
+    _sync();
   }
 
   // ---------------------------------------------------------------------
@@ -340,7 +422,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// already-active direction again toggles the pallet back off.
   void _setScoreDirection(int playerNumber, bool addMode) {
     if (state.currentTurn != playerNumber || state.isComplete) return;
-    if (state.vsComputer && playerNumber == 2) return; // never score for the computer by hand
+    if (state.isComputerSeat(playerNumber)) return; // never score for the computer by hand
     setState(() {
       if (state.scoringArmed && state.isAddMode == addMode) {
         state.scoringArmed = false; // second tap on the same button closes it
@@ -349,6 +431,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         state.scoringArmed = true;
       }
     });
+    _sync();
   }
 
   void _onNumberTap(int number) {
@@ -362,7 +445,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // switches the active turn / re-enables letter placement.
       state.applyTurnScore(delta);
     });
-    if (state.isComplete) {
+    _sync();
+    if (state.isComplete && _online == null) {
       // Persist immediately, keyed by the same id, so a resumed match's
       // history entry reflects the finished result right away rather than
       // depending on the player remembering to tap Save.
@@ -378,13 +462,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   /// pallet again rather than being blocked by it.
   void _switchTurn(int playerNumber) {
     if (state.isComplete) return;
-    if (state.vsComputer) return; // turns pass automatically against the computer
+    // The computer's seat is never handed over by hand, and its turn can't
+    // be interrupted.
+    if (state.isComputerSeat(playerNumber) || state.isComputerSeat(state.currentTurn)) return;
     if (state.currentTurn == playerNumber) return;
     setState(() {
       state.currentTurn = playerNumber;
       state.scoringArmed = false;
       state.isAddMode = true;
     });
+    _sync();
   }
 
   // ---------------------------------------------------------------------
@@ -566,6 +653,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         state.isAddMode = true;
       }
     });
+    _sync();
   }
 
   Future<void> _clearBoard() async {
@@ -588,6 +676,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         selectedCol = null;
         _gameOverDialogShown = false;
       });
+      _sync();
       // If the computer opens this match, it plays its first move again.
       _maybeRunComputerTurn();
     }
@@ -606,11 +695,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------
 
   String _winnerLabel() {
-    if (state.score1 == state.score2) return "It's a tie!";
-    return state.score1 > state.score2
-        ? '${state.player1Initials} wins!'
-        : '${state.player2Initials} wins!';
+    final leaders = state.leaders;
+    if (leaders.length == state.playerCount) return "It's a tie!";
+    if (leaders.length == 1) return '${state.playerInitials[leaders.first - 1]} wins!';
+    return '${leaders.map((i) => state.playerInitials[i - 1]).join(' & ')} tie for the win!';
   }
+
+  /// One "INITIALS  score" pill per player, in the player's own color.
+  List<Widget> _finalScoreChips() => [
+        for (var i = 0; i < state.playerCount; i++)
+          _finalScoreChip(state.playerInitials[i], state.scores[i], GW.playerColor(context, i)),
+      ];
 
   /// "INITIALS  score" pill used in the game-over dialog and panel.
   Widget _finalScoreChip(String initials, int score, Color color) {
@@ -657,10 +752,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               alignment: WrapAlignment.center,
               spacing: 8,
               runSpacing: 8,
-              children: [
-                _finalScoreChip(state.player1Initials, state.score1, scheme.primary),
-                _finalScoreChip(state.player2Initials, state.score2, scheme.tertiary),
-              ],
+              children: _finalScoreChips(),
             ),
           ],
         ),
@@ -670,20 +762,28 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const SetupScreen()),
-              );
+              _leaveFinishedGame();
             },
-            child: const Text('Start New Game'),
+            child: Text(_online != null ? 'Leave Room' : 'Start New Game'),
           ),
         ],
       ),
     );
   }
 
+  /// After a finished match: a local game starts a fresh setup; an online
+  /// game leaves the room and returns to the home screen.
+  void _leaveFinishedGame() {
+    if (_online != null) {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    } else {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SetupScreen()));
+    }
+  }
+
   String _shareText() =>
       '🎮 Grid Words result:\n'
-      '${state.player1Initials}: ${state.score1}  vs  ${state.player2Initials}: ${state.score2}\n'
+      '${[for (var i = 0; i < state.playerCount; i++) '${state.playerInitials[i]}: ${state.scores[i]}'].join('  vs  ')}\n'
       '${_winnerLabel()}\n\n'
       'Play Grid Words yourself: ${AppLinks.downloadUrl}';
 
@@ -740,7 +840,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       }
     }
     final accent = scheme.primary;
-    final aiColor = scheme.tertiary;
+    final aiColor = state.vsComputer ? GW.playerColor(context, state.computerSeat - 1) : scheme.tertiary;
     final letterColor = isDark ? Color.lerp(accent, Colors.white, 0.7)! : GW.deepen(accent);
     final fontSize = (cellSize * 0.42).clamp(10.0, 34.0);
     final radius = (cellSize * 0.2).clamp(4.0, 10.0);
@@ -891,10 +991,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             alignment: WrapAlignment.center,
             spacing: 8,
             runSpacing: 6,
-            children: [
-              _finalScoreChip(state.player1Initials, state.score1, scheme.primary),
-              _finalScoreChip(state.player2Initials, state.score2, scheme.tertiary),
-            ],
+            children: _finalScoreChips(),
           ),
           const SizedBox(height: 10),
           Row(
@@ -909,11 +1006,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const SetupScreen()),
-                  ),
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('New Game', style: TextStyle(fontSize: 12)),
+                  onPressed: _leaveFinishedGame,
+                  icon: Icon(_online != null ? Icons.logout_rounded : Icons.refresh, size: 16),
+                  label: Text(_online != null ? 'Leave' : 'New Game', style: const TextStyle(fontSize: 12)),
                 ),
               ),
             ],
@@ -937,38 +1032,32 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return AlphabetBank(onLetterTap: _onLetterTap, enabled: bankEnabled);
   }
 
-  Widget _buildScoreboard() {
-    final p1ControlsEnabled = state.currentTurn == 1 && !state.isComplete;
+  Widget _buildPlayerCard(int seat, {required bool compact}) {
+    final isTurn = state.currentTurn == seat;
     // The computer scores itself; its +/- buttons are never available.
-    final p2ControlsEnabled = state.currentTurn == 2 && !state.isComplete && !state.vsComputer;
+    final controlsEnabled = isTurn && !state.isComplete && !state.isComputerSeat(seat);
+    return PlayerScoreCard(
+      initials: state.playerInitials[seat - 1],
+      score: state.scores[seat - 1],
+      isAddActive: controlsEnabled && state.isAddMode,
+      isMinusActive: controlsEnabled && !state.isAddMode,
+      controlsEnabled: controlsEnabled,
+      isCurrentTurn: isTurn,
+      onAddPressed: () => _setScoreDirection(seat, true),
+      onMinusPressed: () => _setScoreDirection(seat, false),
+      onCardTap: state.isComputerSeat(seat) ? null : () => _switchTurn(seat),
+      accentColor: GW.playerColor(context, seat - 1),
+      compact: compact,
+    );
+  }
+
+  Widget _buildScoreboard() {
+    final compact = state.playerCount >= 3;
     return Column(
       children: [
         Row(
           children: [
-            PlayerScoreCard(
-              initials: state.player1Initials,
-              score: state.score1,
-              isAddActive: p1ControlsEnabled && state.isAddMode,
-              isMinusActive: p1ControlsEnabled && !state.isAddMode,
-              controlsEnabled: p1ControlsEnabled,
-              isCurrentTurn: state.currentTurn == 1,
-              onAddPressed: () => _setScoreDirection(1, true),
-              onMinusPressed: () => _setScoreDirection(1, false),
-              onCardTap: state.vsComputer ? null : () => _switchTurn(1),
-              accentColor: Theme.of(context).colorScheme.primary,
-            ),
-            PlayerScoreCard(
-              initials: state.player2Initials,
-              score: state.score2,
-              isAddActive: p2ControlsEnabled && state.isAddMode,
-              isMinusActive: p2ControlsEnabled && !state.isAddMode,
-              controlsEnabled: p2ControlsEnabled,
-              isCurrentTurn: state.currentTurn == 2,
-              onAddPressed: () => _setScoreDirection(2, true),
-              onMinusPressed: () => _setScoreDirection(2, false),
-              onCardTap: state.vsComputer ? null : () => _switchTurn(2),
-              accentColor: Theme.of(context).colorScheme.tertiary,
-            ),
+            for (var seat = 1; seat <= state.playerCount; seat++) _buildPlayerCard(seat, compact: compact),
           ],
         ),
         const SizedBox(height: 6),
@@ -1078,14 +1167,22 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         if (didPop) return;
         // Auto-save on the way out — but never for a finished match unless
         // the player explicitly tapped Save.
-        if (!state.isComplete) {
+        if (!state.isComplete && _online == null) {
           await StorageService.saveGame(state);
         }
         if (mounted) Navigator.of(context).pop();
       },
       child: GWScaffold(
-        title: state.vsComputer ? 'Vs Computer · ${state.aiDifficulty.label}' : 'Active Game',
+        title: _online != null
+            ? (_linkUp ? 'Room ${_online!.code}' : 'Reconnecting…')
+            : (state.vsComputer ? 'Play Bot · ${state.aiDifficulty.label}' : 'Pass and Play'),
         actions: [
+          if (_online != null)
+            GWIconButton(
+              icon: Icons.vpn_key_rounded,
+              tooltip: 'Room code',
+              onTap: () => _showRoomCode(),
+            ),
           GWIconButton(icon: Icons.list_alt_rounded, tooltip: 'Used words', onTap: _showUsedWordsDialog),
           GWIconButton(icon: Icons.share_rounded, tooltip: 'Share match', onTap: _shareResult),
         ],

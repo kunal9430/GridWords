@@ -6,10 +6,10 @@ class RulesScreen extends StatelessWidget {
 
   static const List<_Rule> _rules = [
     _Rule('1', 'Game Objective', Icons.flag_rounded,
-        'Two players take turns building words on a shared grid, one letter per turn, '
+        'Two to four players take turns building words on a shared grid, one letter per turn, '
                     'earning points for each turn as they go.'),
     _Rule('2', 'Setup Rules', Icons.tune_rounded,
-        'Choose Rows (R) and Columns (C) for the board, each from 1 to 10, with at least one of '
+        'Pick Pass and Play or Play Bot, then how many players (2 to 4 in total, the Computer included). Choose Rows (R) and Columns (C) for the board, each from 1 to 10, with at least one of '
                     'them greater than 1. Max Word Length is automatically calculated as the larger of R and '
                     'C (so always 1 to 10), and sets the range of the scoring number strip.'),
     _Rule('3', 'Placing a Letter', Icons.touch_app_rounded,
@@ -22,11 +22,11 @@ class RulesScreen extends StatelessWidget {
                     'letter. Then tap a number to apply it (0 is available for a failed attempt).'),
     _Rule('5', 'Automatic Turn Switching', Icons.swap_horiz_rounded,
         'As soon as a score is applied, the highlight clears and the turn automatically passes '
-                    'to the other player, whose Alphabet Bank re-enables. If you change your mind before '
+                    'to the next player, whose Alphabet Bank re-enables. If you change your mind before '
                     'scoring, tap "Clear Selected" to remove the placed letter and re-enable the Alphabet '
                     'Bank without switching turns.'),
     _Rule('6', 'Switching Players Manually', Icons.people_alt_rounded,
-        'Tap the other player\'s card at any time — even while the Numeric Strip is open — '
+        'Tap another player\'s card at any time — even while the Numeric Strip is open — '
                     'to hand them the turn directly; doing so closes the pallet again. Handy for '
                     'correcting a mistake or letting someone go out of order.'),
     _Rule('7', 'Fixing Mistakes', Icons.undo_rounded,
@@ -38,10 +38,10 @@ class RulesScreen extends StatelessWidget {
                     'Single letters count too. If that exact word was already captured earlier in this match, '
                     'you\'ll see a "Word : 🥲" warning and it won\'t save again; a new word shows "Word : 🤠" to '
                     'confirm it. Check the list icon in the top bar any time to see every word captured so far.'),
-    _Rule('9', 'Playing Against the Computer', Icons.smart_toy_rounded,
-        'Choose "Vs Computer" and a difficulty (Easy, Medium, Hard, Expert) on the setup screen. '
-                    'You are Player 1 and the computer is Player 2. Pick "Me" or "Computer" under "Who plays first?" on the setup screen. After you record your score, '
-                    'the computer places one letter, scores itself, and hands the turn back — highlighted in '
+    _Rule('9', 'Play Bot', Icons.smart_toy_rounded,
+        'Choose "Play Bot" and a difficulty (Easy, Medium, Hard, Expert) on the setup screen. '
+                    'The computer always plays last: with you alone it is Player 2, and with friends it takes the final turn of every round. Pick who plays first under "Who plays first?". After the last person records their score, '
+                    'the computer places one letter, scores itself, and hands the turn back to Player 1 — highlighted in '
                     'the computer\'s color on the board. It plays by the same rules: words are runs of touching letters in a '
                     'straight line (across, down or diagonally, read either way) that include its new letter, '
                     'a word scores its length, and a word can only score once per match. If one letter forms '
@@ -54,6 +54,12 @@ class RulesScreen extends StatelessWidget {
     _Rule('10', 'Computer Vocabulary', Icons.spellcheck_rounded,
         'The computer only plays the base (1st) form of a verb — walk, build, go — and never the past '
         '(walked, ran), the past participle (gone, broken) or the -ing form (walking, building).'),
+    _Rule('11', 'Playing Online', Icons.public_rounded,
+        'Tap "Play Online" on the home screen. One person creates a room and shares its 6-character code; '
+        'up to three friends join with it on their own phones, then the host starts the game. Everyone sees the '
+        'same live board and anyone can place a letter, score or hand over the turn, so agree on whose turn it is '
+        'out loud. If two people act at the same moment, the later action is dropped and the newer board is shown. '
+        'Online games have no computer player.'),
   ];
 
   @override

@@ -1,17 +1,24 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../config/app_links.dart';
 import '../models/game_state.dart';
 import '../services/profile_service.dart';
 import '../services/storage_service.dart';
 import '../services/theme_controller.dart';
+import '../widgets/gw_kit.dart';
 import 'about_screen.dart';
 import 'game_screen.dart';
 import 'rules_screen.dart';
+import 'edit_profile_screen.dart';
+import 'online_screen.dart';
 import 'saved_games_screen.dart';
 import 'settings_screen.dart';
 import 'setup_screen.dart';
+
+/// Entries of the profile menu.
+enum _MenuAction { profile, settings, share, theme, saved, howTo, about, help }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -85,16 +92,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                  child: ValueListenableBuilder<Profile>(
-                    valueListenable: ProfileService.current,
-                    builder: (context, profile, _) => Column(
+                  child: Column(
                       children: [
-                        _buildGreeting(profile, primary),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
                         _buildHeroTiles(primary, tertiary),
                         const SizedBox(height: 6),
                         Text(
-                          'Build words. Claim points. Beat your rival.',
+                          'Build words. Claim points. Beat your rivals.',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 13, color: scheme.onSurface.withOpacity(0.6)),
                         ),
@@ -102,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         _stagger(
                           0.35,
                           _ModeCard(
-                            title: 'Play vs Computer',
+                            title: 'Play Bot',
                             subtitle: 'Easy · Medium · Hard · Expert',
                             icon: Icons.smart_toy_rounded,
                             colors: [tertiary, Color.lerp(tertiary, primary, 0.45)!],
@@ -113,50 +117,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         _stagger(
                           0.5,
                           _ModeCard(
-                            title: 'Two Players',
-                            subtitle: 'Pass the phone and play with a friend',
+                            title: 'Pass and Play',
+                            subtitle: 'Pass the phone around · 2 to 4 players',
                             icon: Icons.people_alt_rounded,
                             colors: [primary, Color.lerp(primary, tertiary, 0.35)!],
                             onTap: () => _open(const SetupScreen()),
                           ),
                         ),
-                        if (_lastGame != null) ...[
-                          const SizedBox(height: 12),
-                          _stagger(0.62, _buildContinueCard(_lastGame!)),
-                        ],
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         _stagger(
-                          0.75,
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _SmallTile(
-                                  icon: Icons.folder_open_rounded,
-                                  label: 'Saved\nGames',
-                                  onTap: () => _open(const SavedGamesScreen()),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _SmallTile(
-                                  icon: Icons.menu_book_rounded,
-                                  label: 'How\nto Play',
-                                  onTap: () => _open(const RulesScreen()),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _SmallTile(
-                                  icon: Icons.info_outline_rounded,
-                                  label: 'About',
-                                  onTap: () => _open(const AboutScreen()),
-                                ),
-                              ),
-                            ],
+                          0.6,
+                          _ModeCard(
+                            title: 'Play Online',
+                            subtitle: 'Different devices · share a room code',
+                            icon: Icons.public_rounded,
+                            colors: [GW.playerColor(context, 2), Color.lerp(GW.playerColor(context, 2), primary, 0.4)!],
+                            onTap: () => _open(const OnlineScreen()),
                           ),
                         ),
+                        if (_lastGame != null) ...[
+                          const SizedBox(height: 12),
+                          _stagger(0.7, _buildContinueCard(_lastGame!)),
+                        ],
                       ],
-                    ),
                   ),
                 ),
               ),
@@ -192,69 +175,180 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _buildTopBar(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => _open(const SettingsScreen()),
-          ),
-          IconButton(
-            tooltip: 'Share with friends',
-            icon: const Icon(Icons.share),
-            onPressed: () => Share.share(
-              '🎮 Check out Grid Words! A fun word-building board game '
-              'you can play with a friend or against the computer — build words on a custom grid '
-              'and keep score as you play.\n\n'
-              'Get it here: ${AppLinks.downloadUrl}',
-              subject: 'Grid Words',
-            ),
-          ),
-          ValueListenableBuilder<ThemeMode>(
-            valueListenable: ThemeController.instance.themeMode,
-            builder: (context, mode, _) {
-              final platformBrightness = MediaQuery.platformBrightnessOf(context);
-              final isDark = mode == ThemeMode.dark ||
-                  (mode == ThemeMode.system && platformBrightness == Brightness.dark);
-              return IconButton(
-                tooltip: isDark ? 'Switch to light mode' : 'Switch to dark mode',
-                icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
-                onPressed: () => ThemeController.instance.toggleLightDark(platformBrightness),
-              );
-            },
-          ),
-          const SizedBox(width: 4),
+          _buildProfileMenu(context),
         ],
       ),
     );
   }
 
-  Widget _buildGreeting(Profile profile, Color primary) {
-    final hasName = profile.name.trim().isNotEmpty;
-    if (!hasName && !profile.hasPhoto) return const SizedBox(height: 4);
-    return _stagger(
-      0.0,
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: primary.withOpacity(0.15),
-            backgroundImage: profile.hasPhoto ? MemoryImage(base64Decode(profile.photoBase64!)) : null,
-            child: !profile.hasPhoto ? Icon(Icons.person, size: 24, color: primary) : null,
-          ),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              hasName ? 'Welcome back, ${profile.name}!' : 'Welcome back!',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: primary),
+  void _onMenuSelected(_MenuAction action) {
+    switch (action) {
+      case _MenuAction.profile:
+        _open(const EditProfileScreen());
+      case _MenuAction.settings:
+        _open(const SettingsScreen());
+      case _MenuAction.share:
+        Share.share(
+          '🎮 Check out Grid Words! A fun word-building board game '
+          'you can play with up to 3 friends or against the computer — build words on a custom grid '
+          'and keep score as you play.\n\n'
+          'Get it here: ${AppLinks.downloadUrl}',
+          subject: 'Grid Words',
+        );
+      case _MenuAction.theme:
+        ThemeController.instance.toggleLightDark(MediaQuery.platformBrightnessOf(context));
+      case _MenuAction.saved:
+        _open(const SavedGamesScreen());
+      case _MenuAction.howTo:
+        _open(const RulesScreen());
+      case _MenuAction.about:
+        _open(const AboutScreen());
+      case _MenuAction.help:
+        _showHelp();
+    }
+  }
+
+  Future<void> _showHelp() {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Help'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Questions, feedback or a problem? Email us at:'),
+            const SizedBox(height: 10),
+            const SelectableText(
+              AppLinks.supportEmail,
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          ElevatedButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(const ClipboardData(text: AppLinks.supportEmail));
+              if (ctx.mounted) Navigator.pop(ctx);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Email address copied')),
+                );
+              }
+            },
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copy'),
           ),
         ],
       ),
+    );
+  }
+
+  /// Profile avatar (top left). Everything that used to crowd the home
+  /// screen - settings, sharing, theme, saved games, how to play, about and
+  /// help - lives in the menu it opens.
+  Widget _buildProfileMenu(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    PopupMenuItem<_MenuAction> item(_MenuAction value, IconData icon, String label) {
+      return PopupMenuItem<_MenuAction>(
+        value: value,
+        child: Row(
+          children: [
+            Icon(icon, size: 22, color: scheme.primary),
+            const SizedBox(width: 14),
+            Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+          ],
+        ),
+      );
+    }
+
+    return ValueListenableBuilder<Profile>(
+      valueListenable: ProfileService.current,
+      builder: (context, profile, _) {
+        Widget avatar(double radius) => CircleAvatar(
+              radius: radius,
+              backgroundColor: scheme.primary.withOpacity(0.15),
+              backgroundImage: profile.hasPhoto ? MemoryImage(base64Decode(profile.photoBase64!)) : null,
+              child: !profile.hasPhoto ? Icon(Icons.person, size: radius * 1.1, color: scheme.primary) : null,
+            );
+        final hasName = profile.name.trim().isNotEmpty;
+        return PopupMenuButton<_MenuAction>(
+          tooltip: 'Profile and menu',
+          offset: const Offset(0, 8),
+          position: PopupMenuPosition.under,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          onSelected: _onMenuSelected,
+          itemBuilder: (context) => [
+            PopupMenuItem<_MenuAction>(
+              value: _MenuAction.profile,
+              child: Row(
+                children: [
+                  avatar(20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          hasName ? profile.name : 'Your profile',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                        ),
+                        Text(
+                          profile.email.isEmpty ? 'Tap to edit' : profile.email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.6)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            item(_MenuAction.settings, Icons.settings_outlined, 'Settings'),
+            item(_MenuAction.share, Icons.share_outlined, 'Share with friends'),
+            item(
+              _MenuAction.theme,
+              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              isDark ? 'Switch to light mode' : 'Switch to dark mode',
+            ),
+            const PopupMenuDivider(),
+            item(_MenuAction.saved, Icons.folder_open_rounded, 'Saved Games'),
+            item(_MenuAction.howTo, Icons.menu_book_rounded, 'How to Play'),
+            item(_MenuAction.about, Icons.info_outline_rounded, 'About Us'),
+            item(_MenuAction.help, Icons.help_outline_rounded, 'Help'),
+          ],
+          child: Container(
+            padding: const EdgeInsets.all(2.5),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(colors: GW.brand(context)),
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.primary.withOpacity(isDark ? 0.35 : 0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: CircleAvatar(
+              radius: 22,
+              backgroundColor: scheme.surface,
+              child: avatar(20),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -294,9 +388,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildContinueCard(GameState game) {
     final scheme = Theme.of(context).colorScheme;
     final title = game.vsComputer
-        ? '${game.player1Name} vs Computer · ${game.aiDifficulty.label}'
-        : '${game.player1Name} vs ${game.player2Name}';
-    final score = '${game.score1} – ${game.score2}';
+        ? '${game.playerNames.take(game.playerCount - 1).join(', ')} vs Computer · ${game.aiDifficulty.label}'
+        : game.playerNames.join(' vs ');
+    final score = game.scores.join(' – ');
     return Material(
       color: scheme.surface,
       borderRadius: BorderRadius.circular(18),
@@ -467,43 +561,6 @@ class _ModeCard extends StatelessWidget {
                 Icon(Icons.arrow_forward_rounded, color: fg),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Small square shortcut (Saved Games / How to Play / About).
-class _SmallTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _SmallTile({required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      elevation: 1.5,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Column(
-            children: [
-              Icon(icon, size: 26, color: scheme.primary),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.2),
-              ),
-            ],
           ),
         ),
       ),

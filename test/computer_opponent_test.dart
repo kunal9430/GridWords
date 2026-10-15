@@ -8,6 +8,7 @@ import 'package:grid_word_game/ai/difficulty.dart';
 import 'package:grid_word_game/ai/move_generator.dart';
 import 'package:grid_word_game/ai/word_list.dart';
 import 'package:grid_word_game/models/game_state.dart';
+import 'package:grid_word_game/services/scoreboard_name_resolver.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,7 +61,7 @@ final WordList catWords = WordList.fromWords(const ['CAT', 'AT', 'TO']);
 
 GameState computerGame(List<String> rows, {AiDifficulty difficulty = AiDifficulty.medium}) {
   final s = GameState.newComputerGame(
-    humanName: 'Sam',
+    humanNames: ['Sam'],
     rows: rows.length,
     cols: rows.first.length,
     difficulty: difficulty,
@@ -565,14 +566,14 @@ void main() {
       s.scoringArmed = true;
       expect(s.isComputerTurn, isFalse);
 
-      final humans = GameState.newGame(player1Name: 'A', player2Name: 'B', rows: 2, cols: 2);
+      final humans = GameState.newGame(playerNames: ['A', 'B'], rows: 2, cols: 2);
       humans.currentTurn = 2;
       expect(humans.vsComputer, isFalse);
       expect(humans.isComputerTurn, isFalse);
     });
 
     test('two-human scoring is unchanged: score, then the turn passes', () {
-      final s = GameState.newGame(player1Name: 'Ann', player2Name: 'Bob', rows: 3, cols: 3);
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob'], rows: 3, cols: 3);
       s.scoringArmed = true;
       s.pendingRow = 0;
       s.pendingCol = 0;
@@ -609,7 +610,7 @@ void main() {
     });
 
     test('resetMatch leaves whose turn it is alone in a two-human match (original behaviour)', () {
-      final s = GameState.newGame(player1Name: 'Ann', player2Name: 'Bob', rows: 2, cols: 2);
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob'], rows: 2, cols: 2);
       s.currentTurn = 2;
       s.score2 = 5;
       s.resetMatch();
@@ -619,7 +620,7 @@ void main() {
 
     test('the computer can play the opening move, and keeps doing so after a restart', () {
       final s = GameState.newComputerGame(
-        humanName: 'Sam',
+        humanNames: ['Sam'],
         rows: 3,
         cols: 3,
         difficulty: AiDifficulty.hard,
@@ -633,7 +634,7 @@ void main() {
       expect(s.currentTurn, 2);
       expect(GameState.decode(s.encode()).computerStarts, isTrue);
 
-      final human = GameState.newComputerGame(humanName: 'Sam', rows: 3, cols: 3, difficulty: AiDifficulty.easy);
+      final human = GameState.newComputerGame(humanNames: ['Sam'], rows: 3, cols: 3, difficulty: AiDifficulty.easy);
       expect(human.currentTurn, 1);
       expect(human.computerStarts, isFalse);
     });
@@ -718,7 +719,7 @@ void main() {
       expect(s.canChallengeComputerMove, isFalse, reason: 'no word was claimed');
       expect(s.undoLastComputerMove(), isFalse);
 
-      final humans = GameState.newGame(player1Name: 'A', player2Name: 'B', rows: 2, cols: 2);
+      final humans = GameState.newGame(playerNames: ['A', 'B'], rows: 2, cols: 2);
       expect(humans.canChallengeComputerMove, isFalse);
       expect(humans.undoLastComputerMove(), isFalse);
     });
@@ -808,6 +809,116 @@ void main() {
         seed: 1,
       ));
       expect(r, isNull);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  group('Up to four players', () {
+    test('pass and play rotates through every seat and wraps around', () {
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy', 'Di'], rows: 3, cols: 3);
+      expect(s.playerCount, 4);
+      final seen = <int>[];
+      for (var i = 0; i < 5; i++) {
+        seen.add(s.currentTurn);
+        s.applyTurnScore(i + 1);
+      }
+      expect(seen, [1, 2, 3, 4, 1]);
+      expect(s.scores, [1 + 5, 2, 3, 4]);
+    });
+
+    test('computer sits in the last seat and moves after every human', () {
+      final s = GameState.newComputerGame(
+        humanNames: ['Ann', 'Bob', 'Cy'],
+        rows: 3,
+        cols: 3,
+        difficulty: AiDifficulty.easy,
+      );
+      expect(s.playerCount, 4);
+      expect(s.computerSeat, 4);
+      expect(s.playerInitials.last, '🤖 CPU');
+      expect(s.isComputerTurn, isFalse);
+      s.applyTurnScore(1);
+      s.applyTurnScore(1);
+      expect(s.currentTurn, 3);
+      expect(s.isComputerTurn, isFalse);
+      s.applyTurnScore(1);
+      expect(s.currentTurn, 4);
+      expect(s.isComputerTurn, isTrue);
+    });
+
+    test('a computer opening move starts from the computer seat', () {
+      final s = GameState.newComputerGame(
+        humanNames: ['Ann', 'Bob'],
+        rows: 2,
+        cols: 2,
+        difficulty: AiDifficulty.easy,
+        computerStarts: true,
+      );
+      expect(s.currentTurn, 3);
+      s.resetMatch();
+      expect(s.currentTurn, 3);
+    });
+
+    test('computer move scores only the computer and hands over to player 1', () {
+      final s = GameState.newComputerGame(
+        humanNames: ['Ann', 'Bob'],
+        rows: 2,
+        cols: 3,
+        difficulty: AiDifficulty.easy,
+      );
+      s.grid = grid(['CA.', '..O']);
+      s.locked = [
+        [true, true, false],
+        [false, false, true],
+      ];
+      s.currentTurn = 3;
+      expect(s.applyComputerMove(asResult(pickMove(s.grid, catWords, 0, 2, 'T'))), isTrue);
+      expect(s.scores, [0, 0, 3]);
+      expect(s.currentTurn, 1);
+      expect(s.canChallengeComputerMove, isTrue);
+      expect(s.undoLastComputerMove(), isTrue);
+      expect(s.scores, [0, 0, 0]);
+      expect(s.currentTurn, 3);
+    });
+
+    test('leaders reports ties', () {
+      final s = GameState.newGame(playerNames: ['A', 'B', 'C'], rows: 2, cols: 2);
+      s.scores = [3, 5, 5];
+      expect(s.leaders, [2, 3]);
+      s.scores = [3, 5, 4];
+      expect(s.leaders, [2]);
+    });
+
+    test('3-4 player saves round-trip and old two-player saves still load', () {
+      final s = GameState.newGame(playerNames: ['Ann', 'Bob', 'Cy', 'Di'], rows: 3, cols: 3)
+        ..scores = [1, 2, 3, 4]
+        ..currentTurn = 3;
+      final loaded = GameState.decode(s.encode());
+      expect(loaded.playerNames, ['Ann', 'Bob', 'Cy', 'Di']);
+      expect(loaded.scores, [1, 2, 3, 4]);
+      expect(loaded.currentTurn, 3);
+
+      final legacy = s.toJson()
+        ..remove('playerNames')
+        ..remove('playerInitials')
+        ..remove('scores');
+      final old = GameState.fromJson(legacy);
+      expect(old.playerCount, 2);
+      expect(old.playerNames, ['Ann', 'Bob']);
+      expect(old.scores, [1, 2]);
+    });
+
+    test('labels are unique for up to four players', () {
+      for (final names in [
+        ['Kunal Kumar', 'Kunal Kapoor', 'Kara Knight', 'Kunal Kumar'],
+        ['Sam', 'Sam', 'Sam', 'Sam'],
+        ['Alex', 'Alan', 'Zed', 'Alex'],
+        ['😎', '😎', '🚀'],
+      ]) {
+        final labels = ScoreboardNameResolver.resolveMany(names);
+        expect(labels.length, names.length);
+        expect(labels.toSet().length, labels.length, reason: '$names -> $labels');
+      }
     });
   });
 }

@@ -40,4 +40,10 @@ class StorageService {
     final encodedList = list.map((g) => g.encode()).toList();
     await prefs.setStringList(_key, encodedList);
   }
+
+  /// Removes every saved match.
+  static Future<void> deleteAllGames() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
+  }
 }
