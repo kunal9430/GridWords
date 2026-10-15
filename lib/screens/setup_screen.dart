@@ -7,8 +7,8 @@ import '../widgets/gw_kit.dart';
 import 'game_screen.dart';
 
 class SetupScreen extends StatefulWidget {
-  /// Opens the screen with "Vs Computer" already selected (used by the
-  /// home screen's "Play vs Computer" card).
+  /// Opens the screen with "Play Bot" already selected (used by the
+  /// home screen's "Play Bot" card).
   final bool initialVsComputer;
   const SetupScreen({super.key, this.initialVsComputer = false});
 
@@ -21,16 +21,20 @@ class _SetupScreenState extends State<SetupScreen> {
   static const int _maxDimension = 10;
 
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _p1Controller = TextEditingController();
-  final TextEditingController _p2Controller = TextEditingController();
+  // One name field per possible seat (a match has 2 to 4 players).
+  final List<TextEditingController> _nameControllers =
+      List.generate(GameState.maxPlayers, (_) => TextEditingController());
   final TextEditingController _rowsController = TextEditingController();
   final TextEditingController _colsController = TextEditingController();
   final TextEditingController _maxWordLengthController = TextEditingController();
 
   String? _crossDimensionError;
 
-  // "Play Against Computer": Player 2 becomes the computer.
+  // "Play Bot": the last seat becomes the computer.
   bool _vsComputer = false;
+  // Total players in the match, INCLUDING the computer in a bot match (2-4).
+  int _playerCount = 2;
+  int get _humanCount => _vsComputer ? _playerCount - 1 : _playerCount;
   AiDifficulty _difficulty = AiDifficulty.medium;
   bool _computerStarts = false;
 
@@ -46,7 +50,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _prefillProfileName() async {
     final savedName = await ProfileService.loadDisplayName();
     if (!mounted || savedName.isEmpty) return;
-    setState(() => _p1Controller.text = savedName);
+    setState(() => _nameControllers[0].text = savedName);
   }
 
   void _updateDerivedFields() {
@@ -113,17 +117,17 @@ class _SetupScreenState extends State<SetupScreen> {
       return;
     }
 
+    final names = [for (var i = 0; i < _humanCount; i++) _nameControllers[i].text.trim()];
     final gameState = _vsComputer
         ? GameState.newComputerGame(
-            humanName: _p1Controller.text.trim(),
+            humanNames: names,
             rows: rows,
             cols: cols,
             difficulty: _difficulty,
             computerStarts: _computerStarts,
           )
         : GameState.newGame(
-            player1Name: _p1Controller.text.trim(),
-            player2Name: _p2Controller.text.trim(),
+            playerNames: names,
             rows: rows,
             cols: cols,
           );
@@ -135,8 +139,9 @@ class _SetupScreenState extends State<SetupScreen> {
 
   @override
   void dispose() {
-    _p1Controller.dispose();
-    _p2Controller.dispose();
+    for (final c in _nameControllers) {
+      c.dispose();
+    }
     _rowsController.dispose();
     _colsController.dispose();
     _maxWordLengthController.dispose();
@@ -168,8 +173,8 @@ class _SetupScreenState extends State<SetupScreen> {
       children: [
         Expanded(
           child: GWChoice(
-            label: 'Two Players',
-            caption: 'Pass the phone',
+            label: 'Pass and Play',
+            caption: 'Share one phone',
             icon: Icons.people_alt_rounded,
             selected: !_vsComputer,
             onTap: () => setState(() => _vsComputer = false),
@@ -178,8 +183,8 @@ class _SetupScreenState extends State<SetupScreen> {
         const SizedBox(width: 10),
         Expanded(
           child: GWChoice(
-            label: 'Vs Computer',
-            caption: 'Beat the bot',
+            label: 'Play Bot',
+            caption: 'Beat the computer',
             icon: Icons.smart_toy_rounded,
             selected: _vsComputer,
             onTap: () => setState(() => _vsComputer = true),
@@ -189,34 +194,62 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
+  /// "How many players?" - 2 to 4 in total. In a bot match the computer
+  /// takes the last seat, so the choices count the humans only.
+  Widget _buildPlayerCountCard() {
+    final humanChoices = _vsComputer ? const [1, 2, 3] : const [2, 3, 4];
+    return GWCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GWSectionTitle(
+            icon: Icons.groups_rounded,
+            title: 'How many players?',
+            subtitle: _vsComputer ? 'Up to 4 in total, with the Computer' : 'Up to 4 people',
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (final h in humanChoices) ...[
+                Expanded(
+                  child: GWChoice(
+                    label: '$h',
+                    caption: _vsComputer ? (h == 1 ? 'player + Bot' : 'players + Bot') : 'players',
+                    icon: Icons.person_rounded,
+                    selected: _humanCount == h,
+                    onTap: () => setState(() => _playerCount = _vsComputer ? h + 1 : h),
+                  ),
+                ),
+                if (h != humanChoices.last) const SizedBox(width: 8),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPlayersCard() {
+    final soloVsBot = _vsComputer && _humanCount == 1;
     return GWCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GWSectionTitle(
             icon: Icons.person_rounded,
-            title: _vsComputer ? 'You' : 'Players',
-            subtitle: _vsComputer ? 'You are Player 1' : 'Enter both names',
+            title: soloVsBot ? 'You' : 'Players',
+            subtitle: soloVsBot
+                ? 'You are Player 1'
+                : (_vsComputer ? 'Enter every name in turn order. The Computer plays last.' : 'Enter every name in turn order'),
           ),
           const SizedBox(height: 14),
-          TextFormField(
-            controller: _p1Controller,
-            decoration: InputDecoration(
-              labelText: _vsComputer ? 'Your Name' : 'Player 1 Name',
-              prefixIcon: const Icon(Icons.person_outline_rounded),
-              counterText: '',
-            ),
-            maxLength: _maxNameLength,
-            validator: _validateName,
-          ),
-          if (!_vsComputer) ...[
-            const SizedBox(height: 14),
+          for (var i = 0; i < _humanCount; i++) ...[
+            if (i > 0) const SizedBox(height: 14),
             TextFormField(
-              controller: _p2Controller,
-              decoration: const InputDecoration(
-                labelText: 'Player 2 Name',
-                prefixIcon: Icon(Icons.person_outline_rounded),
+              controller: _nameControllers[i],
+              decoration: InputDecoration(
+                labelText: soloVsBot ? 'Your Name' : 'Player ${i + 1} Name',
+                prefixIcon: const Icon(Icons.person_outline_rounded),
                 counterText: '',
               ),
               maxLength: _maxNameLength,
@@ -279,7 +312,7 @@ class _SetupScreenState extends State<SetupScreen> {
             children: [
               Expanded(
                 child: GWChoice(
-                  label: 'Me',
+                  label: _humanCount == 1 ? 'Me' : 'Players',
                   icon: Icons.person_rounded,
                   selected: !_computerStarts,
                   onTap: () => setState(() => _computerStarts = false),
@@ -462,7 +495,9 @@ class _SetupScreenState extends State<SetupScreen> {
             children: [
               GWReveal(index: 0, child: _buildModeCard()),
               const SizedBox(height: 14),
-              GWReveal(index: 1, child: _buildPlayersCard()),
+              _buildPlayerCountCard(),
+              const SizedBox(height: 14),
+              _buildPlayersCard(),
               if (_vsComputer) ...[
                 const SizedBox(height: 14),
                 GWReveal(index: 2, child: _buildDifficultyCard()),

@@ -26,6 +26,23 @@ class GW {
   }
 
   static bool isDark(BuildContext context) => Theme.of(context).brightness == Brightness.dark;
+
+  /// Accent color for player [index] (0-based, up to 4 players). The first
+  /// two follow the theme (as in a two-player game); seats 3 and 4 use
+  /// fixed teal and orange so all four stay easy to tell apart.
+  static Color playerColor(BuildContext context, int index) {
+    final s = Theme.of(context).colorScheme;
+    switch (index) {
+      case 0:
+        return s.primary;
+      case 1:
+        return s.tertiary;
+      case 2:
+        return const Color(0xFF14A38B);
+      default:
+        return const Color(0xFFE8833A);
+    }
+  }
 }
 
 /// The Home screen's soft page gradient (primary tint -> page color ->

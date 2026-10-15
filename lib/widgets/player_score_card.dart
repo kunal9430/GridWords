@@ -19,6 +19,9 @@ class PlayerScoreCard extends StatelessWidget {
   final VoidCallback? onCardTap;
   final Color accentColor;
 
+  /// Slimmer layout used when 3 or 4 players share the scoreboard row.
+  final bool compact;
+
   const PlayerScoreCard({
     super.key,
     required this.initials,
@@ -31,6 +34,7 @@ class PlayerScoreCard extends StatelessWidget {
     required this.onMinusPressed,
     this.onCardTap,
     this.accentColor = const Color(0xFF5B4FE9),
+    this.compact = false,
   });
 
   @override
@@ -43,6 +47,28 @@ class PlayerScoreCard extends StatelessWidget {
     final nameFg = isCurrentTurn ? onAccent : (isDark ? accentColor : GW.deepen(accentColor));
     final accentEnd = Color.lerp(accentColor, scheme.surface, isDark ? 0.25 : 0.3)!;
 
+    final initialsChip = Container(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: compact ? 3 : 5),
+      decoration: BoxDecoration(
+        color: isCurrentTurn ? onAccent.withOpacity(0.2) : accentColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      constraints: BoxConstraints(maxWidth: compact ? 62 : 72),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          initials.isEmpty ? '?' : initials,
+          style: TextStyle(
+            color: onAccent,
+            fontWeight: FontWeight.w800,
+            fontSize: compact ? 13 : 15,
+            letterSpacing: 0.5,
+            fontFamilyFallback: const ['Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji'],
+          ),
+        ),
+      ),
+    );
+
     return Expanded(
       child: GestureDetector(
         onTap: onCardTap,
@@ -50,14 +76,14 @@ class PlayerScoreCard extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOut,
-          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          margin: EdgeInsets.symmetric(horizontal: compact ? 2 : 4, vertical: 4),
+          padding: compact ? const EdgeInsets.fromLTRB(5, 7, 5, 7) : const EdgeInsets.fromLTRB(10, 10, 10, 10),
           decoration: BoxDecoration(
             gradient: isCurrentTurn
                 ? LinearGradient(colors: [accentColor, accentEnd], begin: Alignment.topLeft, end: Alignment.bottomRight)
                 : null,
             color: isCurrentTurn ? null : scheme.surface,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(compact ? 14 : 18),
             border: Border.all(
               color: isCurrentTurn ? Colors.transparent : accentColor.withOpacity(isDark ? 0.45 : 0.3),
               width: 1.5,
@@ -79,32 +105,13 @@ class PlayerScoreCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isCurrentTurn ? onAccent.withOpacity(0.2) : accentColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(maxWidth: 72),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        initials.isEmpty ? '?' : initials,
-                        style: TextStyle(
-                          color: onAccent,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          letterSpacing: 0.5,
-                          fontFamilyFallback: const ['Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji'],
-                        ),
-                      ),
-                    ),
-                  ),
+                  Flexible(child: initialsChip),
                   AnimatedOpacity(
                     duration: const Duration(milliseconds: 200),
                     opacity: isCurrentTurn ? 1 : 0,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      padding: EdgeInsets.symmetric(horizontal: compact ? 3 : 7, vertical: 3),
+                      margin: EdgeInsets.only(left: compact ? 2 : 0),
                       decoration: BoxDecoration(
                         color: onAccent,
                         borderRadius: BorderRadius.circular(20),
@@ -112,16 +119,19 @@ class PlayerScoreCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.bolt_rounded, size: 11, color: accentColor),
-                          Text(
-                            'TURN',
-                            style: TextStyle(
-                              color: accentColor,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
+                          Icon(Icons.bolt_rounded, size: compact ? 13 : 11, color: accentColor),
+                          // Not enough width for the word when 3-4 players
+                          // share the row - the bolt alone marks the turn.
+                          if (!compact)
+                            Text(
+                              'TURN',
+                              style: TextStyle(
+                                color: accentColor,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -138,25 +148,17 @@ class PlayerScoreCard extends StatelessWidget {
                 child: FittedBox(
                   key: ValueKey<int>(score),
                   fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'SCORE',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
-                          color: nameFg.withOpacity(0.75),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$score',
-                        style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, height: 1.1, color: nameFg),
-                      ),
-                    ],
+                  // One text run, so "SCORE :" and the number share the same
+                  // font size and baseline in every player mode.
+                  child: Text(
+                    'SCORE : $score',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      height: 1.2,
+                      color: nameFg,
+                    ),
                   ),
                 ),
               ),
@@ -167,16 +169,18 @@ class PlayerScoreCard extends StatelessWidget {
                     child: _ScoreButton(
                       label: '+',
                       color: Colors.green.shade600,
+                      compact: compact,
                       active: isAddActive,
                       enabled: controlsEnabled,
                       onTap: onAddPressed,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: compact ? 3 : 6),
                   Expanded(
                     child: _ScoreButton(
                       label: '−',
                       color: Colors.red.shade600,
+                      compact: compact,
                       active: isMinusActive,
                       enabled: controlsEnabled,
                       onTap: onMinusPressed,
@@ -199,11 +203,13 @@ class _ScoreButton extends StatelessWidget {
   final Color color;
   final bool active;
   final bool enabled;
+  final bool compact;
   final VoidCallback onTap;
 
   const _ScoreButton({
     required this.label,
     required this.color,
+    required this.compact,
     required this.active,
     required this.enabled,
     required this.onTap,
@@ -221,7 +227,7 @@ class _ScoreButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(11),
         onTap: enabled ? onTap : null,
         child: Container(
-          height: 34,
+          height: compact ? 32 : 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(11),

@@ -61,6 +61,59 @@ class ScoreboardNameResolver {
     return ResolvedNames(player1Label: '${label1}1', player2Label: '${label2}2');
   }
 
+  /// Resolves a label for each of 2-4 (or more) players at once, in order,
+  /// guaranteeing no two labels are identical. Two players use the exact
+  /// same rules as [resolve]; larger groups first try a richer label for
+  /// each colliding name and finally fall back to a numeric suffix.
+  static List<String> resolveMany(List<String> names) {
+    final trimmed = [for (final n in names) n.trim()];
+    if (trimmed.length == 2) {
+      final r = resolve(player1: trimmed[0], player2: trimmed[1]);
+      return [r.player1Label, r.player2Label];
+    }
+    final labels = [for (final n in trimmed) _deriveLabel(n, _hasAlphanumeric(n))];
+
+    // Pass 1: names that collide get a richer label when that separates them.
+    final byLabel = <String, List<int>>{};
+    for (var i = 0; i < labels.length; i++) {
+      byLabel.putIfAbsent(labels[i], () => []).add(i);
+    }
+    for (final group in byLabel.values) {
+      if (group.length < 2) continue;
+      final richer = [for (final i in group) _richerLabel(trimmed[i], labels[i])];
+      if (richer.toSet().length == richer.length) {
+        for (var k = 0; k < group.length; k++) {
+          labels[group[k]] = richer[k];
+        }
+      }
+    }
+
+    // Pass 2: anything still duplicated gets a numeric suffix (K1, K2, ...).
+    final counts = <String, int>{};
+    for (final l in labels) {
+      counts[l] = (counts[l] ?? 0) + 1;
+    }
+    final seen = <String, int>{};
+    for (var i = 0; i < labels.length; i++) {
+      final l = labels[i];
+      if ((counts[l] ?? 0) < 2) continue;
+      final n = (seen[l] ?? 0) + 1;
+      seen[l] = n;
+      labels[i] = '$l$n';
+    }
+    return labels;
+  }
+
+  /// A longer, more specific label for [name], used to tell apart players
+  /// whose short label is the same.
+  static String _richerLabel(String name, String fallback) {
+    if (!_hasAlphanumeric(name)) return fallback;
+    final words = _wordsOf(_stripToAlnumWords(name));
+    if (words.isEmpty) return fallback;
+    if (words.length >= 2) return _firstLetterPlusSecondLetter(words[0], words[1]);
+    return _firstPlusLastLetter(words[0]);
+  }
+
   // -------------------------------------------------------------------
   // Classification & single-name derivation
   // -------------------------------------------------------------------
