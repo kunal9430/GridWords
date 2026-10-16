@@ -9,10 +9,11 @@ import 'package:http/testing.dart';
 /// A tiny in-memory stand-in for the Firebase Realtime Database REST API:
 /// JSON values per path, an ETag that changes on every write, and
 /// `if-match` support (including `null_etag`).
-MockClient fakeDatabase() {
+MockClient fakeDatabase({void Function(http.Request)? onRequest}) {
   final data = <String, String>{}; // path -> json
   final etags = <String, int>{};
   return MockClient((req) async {
+    onRequest?.call(req);
     final path = req.url.path; // /rooms/CODE/lobby.json
     final current = data[path];
     final etag = current == null ? 'null_etag' : 'e${etags[path]}';
@@ -154,11 +155,7 @@ void main() {
 
   test('the sign-in token is sent as ?auth= on every request', () async {
     final seen = <String>[];
-    final inner = fakeDatabase();
-    final client = MockClient((req) async {
-      seen.add(req.url.queryParameters['auth'] ?? '');
-      return inner.send(req).then(http.Response.fromStream);
-    });
+    final client = fakeDatabase(onRequest: (req) => seen.add(req.url.queryParameters['auth'] ?? ''));
     final s = OnlineService(client: client, baseUrl: 'https://example.test', tokenProvider: () async => 'tok123');
     final code = await s.createRoom(hostName: 'A', hostUid: 'uA', maxPlayers: 2, rows: 3, cols: 3);
     await s.fetchLobby(code);

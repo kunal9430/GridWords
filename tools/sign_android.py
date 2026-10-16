@@ -19,12 +19,17 @@ kts, groovy = app / "build.gradle.kts", app / "build.gradle"
 if kts.exists():
     path = kts
     text = path.read_text()
+    # `java.util.Properties()` does not resolve in newer Gradle Kotlin scripts
+    # (`java` becomes the Java plugin extension), so import the classes instead.
+    # Imports must be the first statements in the file.
+    if "import java.util.Properties" not in text:
+        text = "import java.io.FileInputStream\nimport java.util.Properties\n\n" + text
     if "keystoreProperties" not in text:
         prelude = (
-            "val keystoreProperties = java.util.Properties()\n"
+            "val keystoreProperties = Properties()\n"
             'val keystorePropertiesFile = rootProject.file("key.properties")\n'
             "if (keystorePropertiesFile.exists()) {\n"
-            "    keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))\n"
+            "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
             "}\n\n"
         )
         # right after the closing brace of the plugins { } block
