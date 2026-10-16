@@ -25,11 +25,11 @@ class AppLinks {
   /// Firebase "Web API key" (Project settings > General). Used to turn a
   /// Google sign-in into a Firebase login over plain REST. It is a public
   /// identifier, not a secret. Leave empty to disable Google sign-in.
-  static const String firebaseApiKey = '';
+  static const String firebaseApiKey = 'AIzaSyDoqoQlF9bK7OgEPqcv3uOhufyRKhnDEPg';
 
   /// The OAuth **Web client ID** of the same Google Cloud / Firebase project,
   /// e.g. `1234567890-abcdefg.apps.googleusercontent.com` (Firebase console >
   /// Authentication > Sign-in method > Google > Web SDK configuration).
   /// Google sign-in on Android needs it to hand back an ID token.
-  static const String googleServerClientId = '';
+  static const String googleServerClientId = '1019229630154-ij77g6q54mqsucuukkg376dmjugo748u.apps.googleusercontent.com';
 }
